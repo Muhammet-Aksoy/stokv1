@@ -1560,10 +1560,10 @@
                             <button class="btn btn-info" onclick="showBestSellers()">
                                 <i class="fas fa-star"></i> Çok Satılanlar
                             </button>
-                            <button class="btn btn-warning" onclick="showBulkOperations()">
+                            <button class="btn btn-warning" onclick="showBulkOperations()" title="Birden fazla ürün üzerinde toplu işlemler yapın (fiyat güncelleme, stok güncelleme, kategori atama, toplu silme)">
                                 <i class="fas fa-tasks"></i> Toplu İşlemler
                             </button>
-                            <button class="btn btn-success" onclick="showCategoryManager()">
+                            <button class="btn btn-success" onclick="showCategoryManager()" title="Ürün kategorilerini yönetin, yeni kategoriler ekleyin veya mevcut kategorileri silin">
                                 <i class="fas fa-tags"></i> Kategori Yönetimi
                             </button>
                         </div>
@@ -2267,47 +2267,22 @@
         // Tema ayarları
         let currentTheme = localStorage.getItem('theme') || 'light';
 
-        // Tüm verileri yükle (backend + localStorage fallback) - İyileştirilmiş
+        // Tüm verileri yükle (backend'den)
         async function tumVerileriYukle() {
-            console.log('🔄 Veriler yükleniyor...');
-            
-            // Socket.IO üzerinden fresh data iste
-            if (socket.connected) {
-                console.log('🔗 Socket.IO üzerinden veri isteniyor...');
-                socket.emit('requestData');
-                return true;
-            }
-            
-            // Socket bağlı değilse HTTP API kullan
             try {
-                console.log('🌐 Backend\'den veri çekiliyor...');
-                const res = await fetch(`${API_BASE}/api/tum-veriler`);
+                console.log('🔄 Backend\'den veri çekiliyor...');
+                const response = await fetch(`${API_BASE}/api/tum-veriler`);
                 
-                // Check if response is OK
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    console.error('❌ Backend error response:', errorText);
-                    
-                    // Check if response is HTML (error page)
-                    if (errorText.includes('<!DOCTYPE') || errorText.includes('<html')) {
-                        throw new Error('Server HTML hata sayfası döndürdü. Endpoint mevcut değil olabilir.');
-                    }
-                    
-                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
                 
-                // Check content type
-                const contentType = res.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    const errorText = await res.text();
-                    console.error('❌ Non-JSON response:', errorText);
-                    throw new Error('Server JSON yanıtı döndürmedi');
-                }
-                
-                const result = await res.json();
+                const result = await response.json();
                 
                 if (result.success && result.data) {
                     console.log('✅ Backend verisi başarıyla alındı');
+                    
+                    // Verileri güncelle
                     stokListesi = result.data.stokListesi || {};
                     satisGecmisi = result.data.satisGecmisi || [];
                     musteriler = result.data.musteriler || {};
@@ -2334,39 +2309,13 @@
                     
                     return true;
                 } else {
-                    throw new Error(result.message || result.error || 'Backend başarısız yanıt');
+                    throw new Error(result.error || 'Bilinmeyen hata');
                 }
-            } catch (e) {
-                console.error('❌ Backend\'den veri alınamadı:', e);
+            } catch (error) {
+                console.error('❌ Backend\'den veri alınamadı:', error);
+                showNotification('Veri yükleme hatası: ' + error.message, 'error');
+                return false;
             }
-            
-            // Backend başarısızsa localStorage'dan oku  
-            console.log('💾 LocalStorage\'dan veri okunuyor...');
-            const local = localStorage.getItem('saban_data');
-            if (local) {
-                try {
-                    const result = JSON.parse(local);
-                    stokListesi = result.stokListesi || {};
-                    satisGecmisi = result.satisGecmisi || [];
-                    musteriler = result.musteriler || {};
-                    borclarim = result.borclarim || {};
-                    
-                    console.log('✅ LocalStorage verisi yüklendi');
-                    
-                    // UI'yi güncelle
-                    stokTablosunuGuncelle();
-                    satisTablosunuGuncelle();
-                    musteriTablosunuGuncelle();
-                    guncelleIstatistikler();
-                    
-                    return true;
-                } catch (e) {
-                    console.error('❌ LocalStorage okunamadı:', e);
-                }
-            }
-            
-            console.log('❌ Hiç veri bulunamadı');
-            return false;
         }
         
         // Verileri API'den yükle - Backend First! - İyileştirilmiş
@@ -2540,6 +2489,9 @@
             
             // Sonra backend'den fresh data al
             await tumVerileriYukle();
+            
+            // Veri yüklendikten sonra localStorage'a kaydet
+            guncellenenVerileriKaydet();
         }
         
         // Toplu senkronizasyon (sadece büyük operasyonlar için)
@@ -4941,7 +4893,13 @@
                         return;
                     }
                     
-                    // Verileri güncelle
+                    // Mevcut verileri temizle
+                    stokListesi = {};
+                    satisGecmisi = [];
+                    musteriler = {};
+                    borclarim = {};
+                    
+                    // Yeni verileri yükle
                     stokListesi = data.stokListesi;
                     satisGecmisi = data.satisGecmisi;
                     musteriler = data.musteriler;
@@ -5384,12 +5342,16 @@
                     <div class="modal-body">
                         <div class="form-group">
                             <label>İşlem Türü:</label>
-                            <select id="bulkOperationType" class="form-control">
+                            <select id="bulkOperationType" class="form-control" onchange="updateBulkOperationDescription()">
                                 <option value="price_update">Fiyat Güncelleme</option>
                                 <option value="stock_update">Stok Güncelleme</option>
                                 <option value="category_update">Kategori Güncelleme</option>
                                 <option value="delete_selected">Seçili Ürünleri Sil</option>
                             </select>
+                        </div>
+                        
+                        <div id="bulkOperationDescription" style="background: var(--light-gray); padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px;">
+                            <strong>Fiyat Güncelleme:</strong> Seçili ürünlerin satış fiyatlarını toplu olarak güncelleyin.
                         </div>
                         
                         <div id="bulkOperationFields">
@@ -5419,6 +5381,21 @@
             document.body.appendChild(modal);
         }
         
+        // Toplu işlem açıklamasını güncelle
+        function updateBulkOperationDescription() {
+            const operationType = document.getElementById('bulkOperationType').value;
+            const descriptionDiv = document.getElementById('bulkOperationDescription');
+            
+            const descriptions = {
+                'price_update': '<strong>Fiyat Güncelleme:</strong> Seçili ürünlerin satış fiyatlarını toplu olarak güncelleyin.',
+                'stock_update': '<strong>Stok Güncelleme:</strong> Seçili ürünlerin stok miktarlarını toplu olarak güncelleyin.',
+                'category_update': '<strong>Kategori Güncelleme:</strong> Seçili ürünleri belirtilen kategoriye atayın.',
+                'delete_selected': '<strong>Seçili Ürünleri Sil:</strong> Seçili ürünleri stoktan tamamen kaldırın. Bu işlem geri alınamaz!'
+            };
+            
+            descriptionDiv.innerHTML = descriptions[operationType] || '';
+        }
+
         // Kategori Yönetimi
         function showCategoryManager() {
             const categories = [...new Set(Object.values(stokListesi).map(urun => urun.kategori).filter(k => k))];
@@ -5432,6 +5409,12 @@
                         <span class="close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</span>
                     </div>
                     <div class="modal-body">
+                        <div style="background: var(--light-gray); padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px;">
+                            <strong>Kategori Yönetimi Nedir?</strong><br>
+                            Ürünlerinizi kategorilere ayırarak daha kolay yönetebilirsiniz. 
+                            Örneğin: "Motor Yağı", "Fren Sistemi", "Elektrik" gibi kategoriler oluşturabilirsiniz.
+                        </div>
+                        
                         <div class="form-group">
                             <label>Yeni Kategori:</label>
                             <input type="text" id="newCategory" class="form-control" placeholder="Kategori adı girin">
@@ -5440,14 +5423,14 @@
                         <div class="form-group">
                             <label>Mevcut Kategoriler:</label>
                             <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; margin-top: 10px;">
-                                ${categories.map(cat => `
+                                ${categories.length > 0 ? categories.map(cat => `
                                     <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border-color);">
                                         <span>${cat}</span>
-                                        <button class="btn btn-danger btn-sm" onclick="deleteCategory('${cat}')">
+                                        <button class="btn btn-danger btn-sm" onclick="deleteCategory('${cat}')" title="Bu kategoriyi sil ve ürünlerden kaldır">
                                             <i class="fas fa-trash"></i>
                                         </button>
                                     </div>
-                                `).join('')}
+                                `).join('') : '<p style="color: var(--text-secondary);">Henüz kategori bulunmuyor</p>'}
                             </div>
                         </div>
                     </div>
@@ -5582,7 +5565,7 @@
         
         // Kategori Silme
         function deleteCategory(category) {
-            if (confirm(`"${category}" kategorisini silmek istediğinize emin misiniz?`)) {
+            if (confirm(`"${category}" kategorisini silmek istediğinize emin misiniz? Bu kategorideki ürünlerin kategorisi temizlenecek.`)) {
                 // Bu kategorideki ürünlerin kategorisini temizle
                 Object.values(stokListesi).forEach(urun => {
                     if (urun.kategori === category) {
