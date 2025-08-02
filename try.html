@@ -2216,7 +2216,7 @@
         });
         
         socket.on('connected', (data) => {
-            console.log('✅ Socket bağlantısı kuruldu:', data);
+            // console.log('✅ Socket bağlantısı kuruldu:', data);
             // İlk bağlantıda fresh data al
             socket.emit('requestData');
         });
@@ -2226,7 +2226,7 @@
             
             // Kendi gönderdiğimiz güncellemeleri işleme
             if (data.source === socket.id) {
-                console.log('🔄 Kendi güncellememiz, işleme gerek yok');
+                // console.log('🔄 Kendi güncellememiz, işleme gerek yok');
                 return;
             }
             
@@ -2297,12 +2297,16 @@
                 musteriTablosunuGuncelle();
                 guncelleIstatistikler();
                 
-                console.log('✅ Veriler başarıyla yüklendi');
+                // console.log('✅ Veriler başarıyla yüklendi');
                 
                 // Başarılı senkronizasyon bildirimi
                 if (response.count && response.count.stok > 0) {
                     lastSyncTime = Date.now();
-                    showNotification(`🔄 ${response.count.stok} ürün, ${response.count.satis} satış senkronize edildi`, 'success');
+                    const now = Date.now();
+                    if (now - lastNotificationTime > NOTIFICATION_COOLDOWN) {
+                        showNotification(`🔄 ${response.count.stok} ürün, ${response.count.satis} satış senkronize edildi`, 'success');
+                        lastNotificationTime = now;
+                    }
                 }
             } else {
                 console.error('❌ Data response hatası:', response.error);
@@ -2312,7 +2316,7 @@
         
         socket.on('syncResponse', (response) => {
             if (response.success && response.data) {
-                console.log('🔄 Sync response alındı');
+                // console.log('🔄 Sync response alındı');
                 stokListesi = response.data.stokListesi || {};
                 satisGecmisi = response.data.satisGecmisi || [];
                 musteriler = response.data.musteriler || {};
@@ -2325,7 +2329,11 @@
                 guncelleIstatistikler();
                 
                 lastSyncTime = Date.now();
-                showNotification('🔄 Veriler senkronize edildi', 'success');
+                const now = Date.now();
+                if (now - lastNotificationTime > NOTIFICATION_COOLDOWN) {
+                    showNotification('🔄 Veriler senkronize edildi', 'success');
+                    lastNotificationTime = now;
+                }
             }
         });
         
@@ -2379,7 +2387,11 @@
 
         // Tema ayarları
         let currentTheme = localStorage.getItem('theme') || 'light';
-
+        
+        // Notification throttling - prevent excessive sync notifications
+        let lastNotificationTime = 0;
+        const NOTIFICATION_COOLDOWN = 5 * 60 * 1000; // 5 minutes in milliseconds
+        
         // Tüm verileri yükle (backend'den)
         async function tumVerileriYukle() {
             try {
@@ -2828,7 +2840,14 @@
             
             let productFound = false;
             
-            for (const [barkod, urun] of sortedProducts) {
+            for (const [key, urun] of sortedProducts) {
+                // Handle both old format (barkod only) and new format (composite key)
+                let barkod = key;
+                if (key.includes('_')) {
+                    // New composite key format: barkod_marka_varyant_id
+                    barkod = key.split('_')[0];
+                }
+                
                 // Stok sıfır ise özel class ekle
                 const stockZeroClass = urun.miktar === 0 ? 'stock-zero' : '';
                 
@@ -2841,7 +2860,7 @@
                         <span class="tooltiptext">Çift tıklayarak arama yapabilirsiniz</span>
                     </td>
                     <td>
-                        <span class="product-name-link" onclick="showProductDetails('${barkod}')">
+                        <span class="product-name-link" onclick="showProductDetails('${key}')">
                             ${urun.ad}
                         </span>
                     </td>
@@ -2850,16 +2869,16 @@
                     <td>${urun.alisFiyati ? urun.alisFiyati.toFixed(2) : '-'}</td>
                     <td>
                         <div class="action-buttons">
-                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${barkod}')" ${urun.miktar === 0 ? 'disabled style="opacity:0.5;"' : ''}>
+                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${urun.miktar === 0 ? 'disabled style="opacity:0.5;"' : ''}>
                                 <i class="fas fa-cash-register"></i>
                             </button>
                             <button class="action-btn btn-print" title="Barkod Bas" onclick="barkodBas('${urun.barkod}')">
                                 <i class="fas fa-barcode"></i>
                             </button>
-                            <button class="action-btn btn-edit" title="Düzenle" onclick="urunDuzenle('${barkod}')">
+                            <button class="action-btn btn-edit" title="Düzenle" onclick="urunDuzenle('${key}')">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="action-btn btn-delete" title="Sil" onclick="urunSil('${barkod}')">
+                            <button class="action-btn btn-delete" title="Sil" onclick="urunSil('${key}')">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -2875,7 +2894,7 @@
                 card.innerHTML = `
                     <div class="product-header">
                         <h3 class="tooltip">
-                            <span class="product-name-link" onclick="showProductDetails('${barkod}')">
+                            <span class="product-name-link" onclick="showProductDetails('${key}')">
                                 ${urun.ad}
                             </span>
                         </h3>
@@ -2891,16 +2910,16 @@
                     </div>
                     <div class="product-footer">
                         <div class="action-buttons">
-                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${barkod}')" ${urun.miktar === 0 ? 'disabled style="opacity:0.5;"' : ''}>
+                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${urun.miktar === 0 ? 'disabled style="opacity:0.5;"' : ''}>
                                 <i class="fas fa-cash-register"></i>
                             </button>
                             <button class="action-btn btn-print" title="Barkod Bas" onclick="barkodBas('${urun.barkod}')">
                                 <i class="fas fa-barcode"></i>
                             </button>
-                            <button class="action-btn btn-edit" title="Düzenle" onclick="urunDuzenle('${barkod}')">
+                            <button class="action-btn btn-edit" title="Düzenle" onclick="urunDuzenle('${key}')">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="action-btn btn-delete" title="Sil" onclick="urunSil('${barkod}')">
+                            <button class="action-btn btn-delete" title="Sil" onclick="urunSil('${key}')">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -3302,20 +3321,20 @@
         }
         
         // Ürün satış fonksiyonu
-        function urunSat(barkod) {
-            if (!stokListesi[barkod]) return;
-            if (stokListesi[barkod].miktar <= 0) {
+        function urunSat(key) {
+            if (!stokListesi[key]) return;
+            if (stokListesi[key].miktar <= 0) {
                 Swal.fire('Uyarı', 'Bu ürünün stokta yeterli miktarı yok.', 'warning');
                 return;
             }
             Swal.fire({
                 title: 'Satışı onayla',
                 html: `
-                    <b>${stokListesi[barkod].ad}</b> ürününü satmak istediğinize emin misiniz?
+                    <b>${stokListesi[key].ad}</b> ürününü satmak istediğinize emin misiniz?
                     <div style="margin-top: 15px;">
                         <div class="form-group">
                             <label for="satisMiktari">Satış Miktarı</label>
-                            <input type="number" id="satisMiktari" class="form-control" min="1" max="${stokListesi[barkod].miktar}" value="1">
+                            <input type="number" id="satisMiktari" class="form-control" min="1" max="${stokListesi[key].miktar}" value="1">
                         </div>
                         <div class="form-group">
                             <label for="satisFiyati">Satış Fiyatı (₺)</label>
@@ -3361,16 +3380,16 @@
                         return;
                     }
                     if (isNaN(satisFiyati) || satisFiyati <= 0) {
-                        satisFiyati = stokListesi[barkod].alisFiyati || 0;
+                        satisFiyati = stokListesi[key].alisFiyati || 0;
                     }
-                    await tamamlaSatis(barkod, satisMiktari, customerId, null, satisFiyati);
+                    await tamamlaSatis(key, satisMiktari, customerId, null, satisFiyati);
                 }
             });
         }
         
         // Satışı tamamla
-        async function tamamlaSatis(barkod, miktar, musteriId, aciklama, satisFiyati) {
-            const urun = stokListesi[barkod];
+        async function tamamlaSatis(key, miktar, musteriId, aciklama, satisFiyati) {
+            const urun = stokListesi[key];
             urun.miktar -= miktar;
             const satis = {
                 id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7),
@@ -3550,10 +3569,10 @@
         }
         
         // Ürün düzenle
-        function urunDuzenle(barkod) {
-            const urun = stokListesi[barkod];
+        function urunDuzenle(key) {
+            const urun = stokListesi[key];
             if (!urun) {
-                console.error('Ürün bulunamadı:', barkod);
+                console.error('Ürün bulunamadı:', key);
                 return;
             }
             document.getElementById('barkod').value = urun.barkod; // Gerçek barkod değerini kullan
@@ -3565,8 +3584,8 @@
             document.getElementById('satisFiyati').value = urun.satisFiyati || '';
             document.getElementById('kategori').value = urun.kategori || '';
             
-            // Düzenlenen ürün barkod'unu kaydet
-            editingBarkod = barkod;
+            // Düzenlenen ürün key'ini kaydet
+            editingBarkod = key;
             
             // Sayfayı formun olduğu kısma kaydır
             document.getElementById('barkod').scrollIntoView({ behavior: 'smooth' });
@@ -3722,10 +3741,10 @@
         }
         
         // Ürün silme fonksiyonu (Real-time API kullanır)
-        async function urunSil(barkod) {
-            if (!stokListesi[barkod]) return;
+        async function urunSil(key) {
+            if (!stokListesi[key]) return;
             
-            const urun = stokListesi[barkod];
+            const urun = stokListesi[key];
             
             Swal.fire({
                 title: 'Silmeyi onayla',
@@ -3749,7 +3768,7 @@
                         
                         if (result.success) {
                             // Local data dan sil
-                            delete stokListesi[barkod];
+                            delete stokListesi[key];
                             
                             // Real-time sync to other clients
                             socket.emit('dataUpdate', {

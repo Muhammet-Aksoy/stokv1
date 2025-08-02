@@ -184,114 +184,114 @@ io.on('connection', (socket) => {
     });
     
     // Handle data requests with robust error handling
-            socket.on('requestData', async () => {
+            socket.on('requestData', () => {
             try {
                 // console.log('📡 Data request from client:', socket.id);
-            
-            const data = db.transaction(() => {
-                let stokListesi = {};
-                let satisGecmisi = [];
-                let musteriler = {};
-                let borclarim = {};
                 
-                // Get stok data
-                try {
-                    const stokRows = db.prepare('SELECT * FROM stok ORDER BY updated_at DESC').all();
-                    stokRows.forEach(row => { 
-                        // Use barkod as the key for simpler access
-                        const key = row.barkod;
-                        stokListesi[key] = row;
-                    });
-                } catch (e) {
-                    console.warn('⚠️ Stok query error:', e.message);
-                    // Fallback
-                    const stokRows = db.prepare('SELECT * FROM stok ORDER BY id DESC').all();
-                    stokRows.forEach(row => { 
-                        const key = row.barkod;
-                        stokListesi[key] = row;
-                    });
-                }
+                const data = db.transaction(() => {
+                    let stokListesi = {};
+                    let satisGecmisi = [];
+                    let musteriler = {};
+                    let borclarim = {};
+                    
+                    // Get stok data - FIXED: Handle variants properly
+                    try {
+                        const stokRows = db.prepare('SELECT * FROM stok ORDER BY updated_at DESC').all();
+                        stokRows.forEach(row => { 
+                            // Use composite key (barkod + marka + varyant_id) to handle variants
+                            const key = `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
+                            stokListesi[key] = row;
+                        });
+                    } catch (e) {
+                        console.warn('⚠️ Stok query error:', e.message);
+                        // Fallback
+                        const stokRows = db.prepare('SELECT * FROM stok ORDER BY id DESC').all();
+                        stokRows.forEach(row => { 
+                            const key = `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
+                            stokListesi[key] = row;
+                        });
+                    }
+                    
+                    // Get satis data
+                    try {
+                        satisGecmisi = db.prepare('SELECT * FROM satisGecmisi ORDER BY tarih DESC').all();
+                    } catch (e) {
+                        console.warn('⚠️ Satis query error:', e.message);
+                    }
+                    
+                    // Get musteriler data
+                    try {
+                        const musteriRows = db.prepare('SELECT * FROM musteriler ORDER BY updated_at DESC').all();
+                        musteriRows.forEach(row => { musteriler[row.id] = row; });
+                    } catch (e) {
+                        console.warn('⚠️ Musteri query error:', e.message);
+                        // Fallback
+                        const musteriRows = db.prepare('SELECT * FROM musteriler ORDER BY id DESC').all();
+                        musteriRows.forEach(row => { musteriler[row.id] = row; });
+                    }
+                    
+                    // Get borclarim data
+                    try {
+                        const borcRows = db.prepare('SELECT * FROM borclarim ORDER BY tarih DESC').all();
+                        borcRows.forEach(row => { borclarim[row.id] = row; });
+                    } catch (e) {
+                        console.warn('⚠️ Borc query error:', e.message);
+                    }
+                    
+                    return { stokListesi, satisGecmisi, musteriler, borclarim };
+                })();
                 
-                // Get satis data
-                try {
-                    satisGecmisi = db.prepare('SELECT * FROM satisGecmisi ORDER BY tarih DESC').all();
-                } catch (e) {
-                    console.warn('⚠️ Satis query error:', e.message);
-                }
+                socket.emit('dataResponse', {
+                    success: true,
+                    data: data,
+                    timestamp: new Date().toISOString(),
+                    count: {
+                        stok: Object.keys(data.stokListesi).length,
+                        satis: data.satisGecmisi.length,
+                        musteri: Object.keys(data.musteriler).length,
+                        borc: Object.keys(data.borclarim).length
+                    }
+                });
                 
-                // Get musteriler data
-                try {
-                    const musteriRows = db.prepare('SELECT * FROM musteriler ORDER BY updated_at DESC').all();
-                    musteriRows.forEach(row => { musteriler[row.id] = row; });
-                } catch (e) {
-                    console.warn('⚠️ Musteri query error:', e.message);
-                    // Fallback
-                    const musteriRows = db.prepare('SELECT * FROM musteriler ORDER BY id DESC').all();
-                    musteriRows.forEach(row => { musteriler[row.id] = row; });
-                }
+                // console.log('✅ Data sent to client:', socket.id);
                 
-                // Get borclarim data
-                try {
-                    const borcRows = db.prepare('SELECT * FROM borclarim ORDER BY tarih DESC').all();
-                    borcRows.forEach(row => { borclarim[row.id] = row; });
-                } catch (e) {
-                    console.warn('⚠️ Borc query error:', e.message);
-                }
-                
-                return { stokListesi, satisGecmisi, musteriler, borclarim };
-            })();
-            
-            socket.emit('dataResponse', {
-                success: true,
-                data: data,
-                timestamp: new Date().toISOString(),
-                count: {
-                    stok: Object.keys(data.stokListesi).length,
-                    satis: data.satisGecmisi.length,
-                    musteri: Object.keys(data.musteriler).length,
-                    borc: Object.keys(data.borclarim).length
-                }
-            });
-            
-            // console.log('✅ Data sent to client:', socket.id);
-            
-        } catch (error) {
-            console.error('❌ Data request error:', error);
-            socket.emit('dataResponse', {
-                success: false,
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-        }
-    });
-    
-    // Handle real-time data updates
-    socket.on('dataUpdate', (data) => {
-        try {
-            // console.log('📡 Data update received:', data.type);
-            
-            if (!data.type || !data.data) {
-                throw new Error('Invalid data update format');
+            } catch (error) {
+                console.error('❌ Data request error:', error);
+                socket.emit('dataResponse', {
+                    success: false,
+                    error: error.message,
+                    timestamp: new Date().toISOString()
+                });
             }
-            
-            // Broadcast to all clients
-            socket.broadcast.emit('dataUpdate', data);
-            
-            socket.emit('updateResponse', {
-                success: true,
-                message: 'Data updated successfully',
-                timestamp: new Date().toISOString()
-            });
-            
-        } catch (error) {
-            console.error('❌ Data update error:', error);
-            socket.emit('updateResponse', {
-                success: false,
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-        }
-    });
+        });
+        
+        // Handle real-time data updates
+        socket.on('dataUpdate', (data) => {
+            try {
+                // console.log('📡 Data update received:', data.type);
+                
+                if (!data.type || !data.data) {
+                    throw new Error('Invalid data update format');
+                }
+                
+                // Broadcast to all clients
+                socket.broadcast.emit('dataUpdate', data);
+                
+                socket.emit('updateResponse', {
+                    success: true,
+                    message: 'Data updated successfully',
+                    timestamp: new Date().toISOString()
+                });
+                
+            } catch (error) {
+                console.error('❌ Data update error:', error);
+                socket.emit('updateResponse', {
+                    success: false,
+                    error: error.message,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        });
 });
 
 // API Routes
@@ -373,8 +373,9 @@ app.get('/api/tum-veriler', async (req, res) => {
                 
                 // Index by barkod for consistent access
                 stokRows.forEach(row => { 
-                    const key = row.barkod;
-                    if (key) {
+                    // Use composite key (barkod + marka + varyant_id) to handle variants
+                    const key = `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
+                    if (row.barkod) {
                         stokListesi[key] = row; 
                     } else {
                         console.warn('⚠️ Product without barcode found:', row);
