@@ -68,8 +68,7 @@ function initializeDatabase() {
                 aciklama TEXT,
                 varyant_id TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(barkod)
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         `);
         
@@ -497,7 +496,7 @@ app.post('/api/tum-veriler', async (req, res) => {
                         continue;
                     }
                     
-                    // Check for existing record using the composite unique constraint
+                    // Check for existing record with same barcode, marka, and varyant_id
                     const existing = db.prepare('SELECT id FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
                     
                     if (existing) {
@@ -532,7 +531,7 @@ app.post('/api/tum-veriler', async (req, res) => {
                             skippedCount++; // No changes needed
                         }
                     } else {
-                        // Insert new record
+                        // Insert new record - allow multiple products with same barcode
                         // Ensure proper data types and handle null/undefined values
                         const ad = urun.ad || '';
                         const miktar = parseInt(urun.miktar) || 0;
