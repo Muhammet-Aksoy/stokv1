@@ -184,9 +184,9 @@ io.on('connection', (socket) => {
     });
     
     // Handle data requests with robust error handling
-    socket.on('requestData', async () => {
-        try {
-            console.log('📡 Data request from client:', socket.id);
+            socket.on('requestData', async () => {
+            try {
+                // console.log('📡 Data request from client:', socket.id);
             
             const data = db.transaction(() => {
                 let stokListesi = {};
@@ -253,7 +253,7 @@ io.on('connection', (socket) => {
                 }
             });
             
-            console.log('✅ Data sent to client:', socket.id);
+            // console.log('✅ Data sent to client:', socket.id);
             
         } catch (error) {
             console.error('❌ Data request error:', error);
@@ -268,7 +268,7 @@ io.on('connection', (socket) => {
     // Handle real-time data updates
     socket.on('dataUpdate', (data) => {
         try {
-            console.log('📡 Data update received:', data.type);
+            // console.log('📡 Data update received:', data.type);
             
             if (!data.type || !data.data) {
                 throw new Error('Invalid data update format');
@@ -358,7 +358,7 @@ app.get('/api/test', (req, res) => {
 // GET endpoint for all data
 app.get('/api/tum-veriler', async (req, res) => {
     try {
-        console.log('📡 GET /api/tum-veriler - Data request received');
+        // console.log('📡 GET /api/tum-veriler - Data request received');
         
         const data = db.transaction(() => {
             let stokListesi = {};
@@ -468,13 +468,13 @@ app.post('/api/tum-veriler', async (req, res) => {
             });
         }
         
-        console.log('📡 POST /api/tum-veriler - Bulk sync started');
-        console.log('📊 Import data summary:', {
-            stok: Object.keys(stokListesi).length,
-            satis: satisGecmisi.length,
-            musteri: Object.keys(musteriler).length,
-            borc: Object.keys(borclarim).length
-        });
+        // console.log('📡 POST /api/tum-veriler - Bulk sync started');
+        // console.log('📊 Import data summary:', {
+        //     stok: Object.keys(stokListesi).length,
+        //     satis: satisGecmisi.length,
+        //     musteri: Object.keys(musteriler).length,
+        //     borc: Object.keys(borclarim).length
+        // });
         
         const result = db.transaction(() => {
             let updatedCount = 0;
@@ -926,21 +926,24 @@ app.post('/api/stok-ekle', async (req, res) => {
         const aciklama = urun.aciklama || '';
         const varyant_id = urun.varyant_id || '';
         
-        // Check if barcode already exists
-        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
+        // Check if exact same product exists (barcode + brand + variant combination)
+        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
         
         if (existingProduct) {
-            // Barcode already exists - warn user and offer to update
+            // Exact same product exists - warn user and offer to update
             res.status(409).json({ 
                 success: false, 
-                message: `Bu barkod zaten mevcut: ${existingProduct.ad}`,
+                message: `Bu ürün zaten mevcut: ${existingProduct.ad}`,
                 existingProduct: existingProduct,
                 conflict: true,
                 timestamp: new Date().toISOString()
             });
             return;
         } else {
-            // Insert new product (no existing barcode)
+            // Check if barcode exists with different properties
+            const existingBarcodeProducts = db.prepare('SELECT * FROM stok WHERE barkod = ?').all(barkod);
+            
+            // Insert new product (allows multiple products with same barcode but different properties)
             const result = db.prepare(`
                 INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -958,10 +961,12 @@ app.post('/api/stok-ekle', async (req, res) => {
             
             res.status(201).json({ 
                 success: true, 
-                message: 'Yeni ürün başarıyla eklendi', 
+                message: existingBarcodeProducts.length > 0 ? 
+                    `Yeni ürün eklendi. Bu barkod ile ${existingBarcodeProducts.length} farklı ürün mevcut.` : 
+                    'Yeni ürün başarıyla eklendi', 
                 data: insertedProduct,
                 isUpdate: false,
-                existingVariants: 0,
+                existingVariants: existingBarcodeProducts.length,
                 timestamp: new Date().toISOString()
             });
         }
