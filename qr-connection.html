@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sabancıoğlu Otomotiv - Bağlantı</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+        .ip-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .ip-card {
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+        .qr-code {
+            margin: 15px 0;
+        }
+        .ip-url {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin: 10px 0;
+            word-break: break-all;
+        }
+        .copy-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            transition: background 0.3s;
+        }
+        .copy-btn:hover {
+            background: #45a049;
+        }
+        .refresh-btn {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin: 20px auto;
+            display: block;
+            transition: background 0.3s;
+        }
+        .refresh-btn:hover {
+            background: #1976D2;
+        }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.2);
+        }
+        .loading {
+            text-align: center;
+            font-size: 1.2em;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 Sabancıoğlu Otomotiv</h1>
+        <h2 style="text-align: center;">📱 Mobil Bağlantı</h2>
+        
+        <div class="status" id="status">
+            <div class="loading">🔄 IP adresleri yükleniyor...</div>
+        </div>
+        
+        <button class="refresh-btn" onclick="getNetworkInfo()">🔄 IP Adreslerini Yenile</button>
+        
+        <div id="ip-container" class="ip-list"></div>
+    </div>
+
+    <script>
+        async function getNetworkInfo() {
+            const statusEl = document.getElementById('status');
+            const containerEl = document.getElementById('ip-container');
+            
+            statusEl.innerHTML = '<div class="loading">🔄 IP adresleri kontrol ediliyor...</div>';
+            containerEl.innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/network-info');
+                const data = await response.json();
+                
+                if (data.success) {
+                    statusEl.innerHTML = `
+                        <div style="color: #4CAF50;">✅ Sunucu çalışıyor</div>
+                        <div>📅 Son güncelleme: ${new Date().toLocaleString('tr-TR')}</div>
+                    `;
+                    
+                    data.addresses.forEach((addr, index) => {
+                        createIPCard(addr, index);
+                    });
+                } else {
+                    throw new Error(data.message);
+                }
+                
+            } catch (error) {
+                statusEl.innerHTML = `<div style="color: #f44336;">❌ Bağlantı hatası: ${error.message}</div>`;
+                createManualEntry();
+            }
+        }
+        
+        function createIPCard(address, index) {
+            const url = `http://${address}:3000`;
+            const containerEl = document.getElementById('ip-container');
+            
+            const card = document.createElement('div');
+            card.className = 'ip-card';
+            card.innerHTML = `
+                <h3>📡 Bağlantı ${index + 1}</h3>
+                <div class="qr-code" id="qr-${index}"></div>
+                <div class="ip-url">${url}</div>
+                <button class="copy-btn" onclick="copyToClipboard('${url}')">📋 Kopyala</button>
+                <button class="copy-btn" onclick="openUrl('${url}')">🔗 Aç</button>
+            `;
+            
+            containerEl.appendChild(card);
+            
+            QRCode.toCanvas(document.getElementById(`qr-${index}`), url, {
+                width: 200,
+                height: 200,
+                colorDark: '#000000',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.M
+            });
+        }
+        
+        function createManualEntry() {
+            const containerEl = document.getElementById('ip-container');
+            
+            containerEl.innerHTML = `
+                <div class="ip-card">
+                    <h3>📝 Manuel IP Girişi</h3>
+                    <p>Otomatik IP algılanamadı. Manuel olarak girin:</p>
+                    <input type="text" id="manual-ip" placeholder="192.168.1.100" 
+                           style="padding: 10px; font-size: 1.1em; border: none; border-radius: 5px; width: 200px;">
+                    <button class="copy-btn" onclick="createManualQR()">QR Oluştur</button>
+                    <div class="qr-code" id="manual-qr"></div>
+                </div>
+            `;
+        }
+        
+        function createManualQR() {
+            const ip = document.getElementById('manual-ip').value;
+            if (!ip) return;
+            
+            const url = `http://${ip}:3000`;
+            QRCode.toCanvas(document.getElementById('manual-qr'), url, {
+                width: 200,
+                height: 200,
+                colorDark: '#000000',
+                colorLight: '#ffffff'
+            });
+        }
+        
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('📋 Panoya kopyalandı: ' + text);
+            });
+        }
+        
+        function openUrl(url) {
+            window.open(url, '_blank');
+        }
+        
+        getNetworkInfo();
+        setInterval(getNetworkInfo, 30000);
+    </script>
+</body>
+</html>
