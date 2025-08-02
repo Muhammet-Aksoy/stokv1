@@ -69,7 +69,7 @@ function initializeDatabase() {
                 varyant_id TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(barkod, marka, varyant_id)
+                UNIQUE(barkod)
             )
         `);
         
@@ -927,67 +927,19 @@ app.post('/api/stok-ekle', async (req, res) => {
         const aciklama = urun.aciklama || '';
         const varyant_id = urun.varyant_id || '';
         
-        // Check if same barkod exists (regardless of marka/variant)
-        const existingProducts = db.prepare('SELECT * FROM stok WHERE barkod = ?').all(barkod);
+        // Check if barcode already exists
+        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
         
-        if (existingProducts.length > 0) {
-            // Check if exact same combination exists
-            const exactMatch = existingProducts.find(p => 
-                p.marka === marka && p.varyant_id === varyant_id
-            );
-            
-            if (exactMatch) {
-                // Update existing product with same barkod+marka+variant
-                const result = db.prepare(`
-                    UPDATE stok SET 
-                        ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                        kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP 
-                    WHERE barkod = ? AND marka = ? AND varyant_id = ?
-                `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
-                
-                const updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
-                
-                // Real-time sync to all clients
-                io.to('dataSync').emit('dataUpdated', {
-                    type: 'stok-update',
-                    data: updatedProduct,
-                    timestamp: new Date().toISOString()
-                });
-                
-                res.json({ 
-                    success: true, 
-                    message: 'Mevcut ürün güncellendi', 
-                    data: updatedProduct,
-                    isUpdate: true,
-                    existingVariants: existingProducts.length,
-                    timestamp: new Date().toISOString()
-                });
-            } else {
-                // Same barcode but different brand/variant - add as new variant
-                const result = db.prepare(`
-                    INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                `).run(barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id);
-                
-                // Get the inserted product with its ID
-                const insertedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
-                
-                // Real-time sync to all clients
-                io.to('dataSync').emit('dataUpdated', {
-                    type: 'stok-add',
-                    data: insertedProduct,
-                    timestamp: new Date().toISOString()
-                });
-                
-                res.status(201).json({ 
-                    success: true, 
-                    message: `Aynı barkodlu yeni varyant eklendi (${existingProducts.length + 1} varyant)`, 
-                    data: insertedProduct,
-                    isUpdate: false,
-                    existingVariants: existingProducts.length,
-                    timestamp: new Date().toISOString()
-                });
-            }
+        if (existingProduct) {
+            // Barcode already exists - warn user and offer to update
+            res.status(409).json({ 
+                success: false, 
+                message: `Bu barkod zaten mevcut: ${existingProduct.ad}`,
+                existingProduct: existingProduct,
+                conflict: true,
+                timestamp: new Date().toISOString()
+            });
+            return;
         } else {
             // Insert new product (no existing barcode)
             const result = db.prepare(`
@@ -1614,6 +1566,63 @@ app.post('/api/bulk-update', async (req, res) => {
     }
 });
 
+// POST /api/stok-guncelle-barkod - Update existing product with same barcode
+app.post('/api/stok-guncelle-barkod', async (req, res) => {
+    try {
+        const { barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id } = req.body;
+        
+        if (!barkod || !ad) {
+            return res.status(400).json({
+                success: false,
+                message: 'Barkod ve ürün adı zorunludur',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Check if product exists
+        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
+        
+        if (!existingProduct) {
+            return res.status(404).json({
+                success: false,
+                message: 'Ürün bulunamadı',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Update the existing product
+        const result = db.prepare(`
+            UPDATE stok SET 
+                ad = ?, marka = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
+                kategori = ?, aciklama = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP 
+            WHERE barkod = ?
+        `).run(ad, marka || '', miktar || 0, alisFiyati || 0, satisFiyati || 0, 
+                kategori || '', aciklama || '', varyant_id || '', barkod);
+        
+        const updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
+        
+        // Real-time sync to all clients
+        io.to('dataSync').emit('dataUpdated', {
+            type: 'stok-update',
+            data: updatedProduct,
+            timestamp: new Date().toISOString()
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'Ürün başarıyla güncellendi', 
+            data: updatedProduct,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Reset database endpoint
 app.post('/api/reset-database', async (req, res) => {
     try {
@@ -1660,11 +1669,27 @@ app.get('/', (req, res) => {
 });
 
 // Start server
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
+    const os = require('os');
+    const networkInterfaces = os.networkInterfaces();
+    let localIP = 'localhost';
+    
+    // Find local IP address
+    for (const name of Object.keys(networkInterfaces)) {
+        for (const interface of networkInterfaces[name]) {
+            if (interface.family === 'IPv4' && !interface.internal) {
+                localIP = interface.address;
+                break;
+            }
+        }
+        if (localIP !== 'localhost') break;
+    }
+    
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Database: ${dbPath}`);
     console.log(`🔗 WebSocket: ws://localhost:${PORT}`);
     console.log(`🌐 HTTP: http://localhost:${PORT}`);
+    console.log(`🌐 Local Network: http://${localIP}:${PORT}`);
     console.log(`🧪 Test: http://localhost:${PORT}/test`);
     console.log(`📋 API Docs: http://localhost:${PORT}/api/test`);
 });
