@@ -424,8 +424,11 @@ app.post('/api/tum-veriler', async (req, res) => {
             let insertedCount = 0;
             
             // Sync stok data
-            for (const [barkod, urun] of Object.entries(stokListesi)) {
+            for (const [key, urun] of Object.entries(stokListesi)) {
                 try {
+                    // Handle both old structure (product ID as key) and new structure (barcode as key)
+                    const barkod = urun.barkod || key;
+                    
                     const existing = db.prepare('SELECT id FROM stok WHERE barkod = ?').get(barkod);
                     
                     if (existing) {
@@ -436,13 +439,15 @@ app.post('/api/tum-veriler', async (req, res) => {
                         const satisFiyati = parseFloat(urun.satisFiyati) || 0;
                         const kategori = urun.kategori || '';
                         const aciklama = urun.aciklama || '';
+                        const marka = urun.marka || '';
+                        const varyant_id = urun.varyant_id || '';
                         
                         db.prepare(`
                             UPDATE stok SET 
                                 ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                                kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP
+                                kategori = ?, aciklama = ?, marka = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP
                             WHERE barkod = ?
-                        `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod);
+                        `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, marka, varyant_id, barkod);
                         updatedCount++;
                     } else {
                         // Ensure proper data types and handle null/undefined values
@@ -452,15 +457,17 @@ app.post('/api/tum-veriler', async (req, res) => {
                         const satisFiyati = parseFloat(urun.satisFiyati) || 0;
                         const kategori = urun.kategori || '';
                         const aciklama = urun.aciklama || '';
+                        const marka = urun.marka || '';
+                        const varyant_id = urun.varyant_id || '';
                         
                         db.prepare(`
-                            INSERT INTO stok (barkod, ad, miktar, alisFiyati, satisFiyati, kategori, aciklama)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        `).run(barkod, ad, miktar, alisFiyati, satisFiyati, kategori, aciklama);
+                            INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        `).run(barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id);
                         insertedCount++;
                     }
                 } catch (e) {
-                    console.warn(`⚠️ Stok sync error for ${barkod}:`, e.message);
+                    console.warn(`⚠️ Stok sync error for ${key}:`, e.message);
                 }
             }
             
@@ -1324,11 +1331,14 @@ app.post('/urunler', async (req, res) => {
             `);
             
             let insertedCount = 0;
-            for (const barkod in stokListesi) {
-                const urun = stokListesi[barkod];
+            for (const key in stokListesi) {
+                const urun = stokListesi[key];
                 try {
+                    // Ensure we use the actual barcode from the product object
+                    const barkod = urun.barkod || key;
+                    
                     insertStok.run(
-                        urun.barkod || barkod,
+                        barkod,
                         urun.ad || '',
                         parseInt(urun.miktar) || 0,
                         parseFloat(urun.alisFiyati) || 0,
@@ -1338,7 +1348,7 @@ app.post('/urunler', async (req, res) => {
                     );
                     insertedCount++;
                 } catch (e) {
-                    console.warn(`⚠️ Error inserting product ${barkod}:`, e.message);
+                    console.warn(`⚠️ Error inserting product ${key}:`, e.message);
                 }
             }
             return insertedCount;
