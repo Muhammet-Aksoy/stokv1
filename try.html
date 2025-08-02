@@ -65,6 +65,15 @@
             --info: #3b82f6;
             --primary: #3b82f6;
             --primary-dark: #1d4ed8;
+            --menu-bg: #2a2a2a;
+            --menu-hover: #3a3a3a;
+            --menu-text: #ffffff;
+            --menu-border: #505050;
+            --button-bg: #3a3a3a;
+            --button-hover: #4a4a4a;
+            --button-text: #ffffff;
+            --link-color: #60a5fa;
+            --link-hover: #93c5fd;
         }
 
         * {
@@ -1177,6 +1186,71 @@
             background-color: var(--dropdown-hover);
         }
         
+        /* Dark theme menu improvements */
+        [data-theme="dark"] .main-menu-dropdown {
+            background-color: var(--menu-bg);
+            border: 1px solid var(--menu-border);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+        }
+        
+        [data-theme="dark"] .menu-item {
+            color: var(--menu-text);
+            border-bottom: 1px solid var(--menu-border);
+        }
+        
+        [data-theme="dark"] .menu-item:hover {
+            background-color: var(--menu-hover);
+        }
+        
+        [data-theme="dark"] .sync-status-indicator {
+            border-top: 1px solid var(--menu-border);
+            color: var(--menu-text);
+        }
+        
+        /* Dark theme button improvements */
+        [data-theme="dark"] .btn {
+            background-color: var(--button-bg);
+            color: var(--button-text);
+            border: 1px solid var(--border-color);
+        }
+        
+        [data-theme="dark"] .btn:hover {
+            background-color: var(--button-hover);
+        }
+        
+        [data-theme="dark"] .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+        
+        [data-theme="dark"] .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+        
+        /* Dark theme link improvements */
+        [data-theme="dark"] .product-name-link {
+            color: var(--link-color);
+        }
+        
+        [data-theme="dark"] .product-name-link:hover {
+            color: var(--link-hover);
+        }
+        
+        /* Dark theme table header improvements */
+        [data-theme="dark"] thead th {
+            background-color: var(--table-bg);
+            color: var(--text-primary);
+            border-bottom: 2px solid var(--border-color);
+        }
+        
+        [data-theme="dark"] thead th[data-sort] {
+            cursor: pointer;
+        }
+        
+        [data-theme="dark"] thead th[data-sort]:hover {
+            background-color: var(--table-hover);
+        }
+        
         .context-menu-item i {
             margin-right: 8px;
             width: 16px;
@@ -1578,12 +1652,7 @@
                             <button class="btn btn-info" onclick="showBestSellers()">
                                 <i class="fas fa-star"></i> Çok Satılanlar
                             </button>
-                            <button class="btn btn-warning" onclick="showBulkOperations()" title="Birden fazla ürün üzerinde toplu işlemler yapın (fiyat güncelleme, stok güncelleme, kategori atama, toplu silme)">
-                                <i class="fas fa-tasks"></i> Toplu İşlemler
-                            </button>
-                            <button class="btn btn-success" onclick="showCategoryManager()" title="Ürün kategorilerini yönetin, yeni kategoriler ekleyin veya mevcut kategorileri silin">
-                                <i class="fas fa-tags"></i> Kategori Yönetimi
-                            </button>
+
                         </div>
                     </div>
 
@@ -1680,14 +1749,30 @@
                         <table id="salesTable">
                             <thead>
                                 <tr>
-                                    <th>Tarih</th>
-                                    <th>Barkod</th>
-                                    <th>Ürün</th>
-                                    <th>Miktar</th>
-                                    <th>Alış (₺)</th>
-                                    <th>Satış (₺)</th>
-                                    <th>Ödeme</th>
-                                    <th>Müşteri</th>
+                                    <th data-sort="tarih" onclick="sortSalesTable('tarih')" style="cursor: pointer;">
+                                        Tarih <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="barkod" onclick="sortSalesTable('barkod')" style="cursor: pointer;">
+                                        Barkod <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="urunAdi" onclick="sortSalesTable('urunAdi')" style="cursor: pointer;">
+                                        Ürün <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="miktar" onclick="sortSalesTable('miktar')" style="cursor: pointer;">
+                                        Miktar <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="alisFiyati" onclick="sortSalesTable('alisFiyati')" style="cursor: pointer;">
+                                        Alış (₺) <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="fiyat" onclick="sortSalesTable('fiyat')" style="cursor: pointer;">
+                                        Satış (₺) <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="borc" onclick="sortSalesTable('borc')" style="cursor: pointer;">
+                                        Ödeme <i class="fas fa-sort"></i>
+                                    </th>
+                                    <th data-sort="musteriAdi" onclick="sortSalesTable('musteriAdi')" style="cursor: pointer;">
+                                        Müşteri <i class="fas fa-sort"></i>
+                                    </th>
                                     <th>İşlemler</th>
                                 </tr>
                             </thead>
@@ -2260,6 +2345,9 @@
         
         // Müşteri sıralama ayarları
         let currentCustomerSort = { column: null, direction: 'asc' };
+        
+        // Satış geçmişi sıralama ayarları
+        let currentSalesSort = { column: null, direction: 'asc' };
         
         // Geçerli barkod
         let currentBarcode = '';
@@ -2887,7 +2975,51 @@
             salesBody.innerHTML = '';
             
             if (satisGecmisi && satisGecmisi.length > 0) {
-                satisGecmisi.forEach(satis => {
+                // Satış verilerini sırala
+                let sortedSales = [...satisGecmisi];
+                
+                if (currentSalesSort.column) {
+                    sortedSales.sort((a, b) => {
+                        let valueA, valueB;
+                        
+                        switch(currentSalesSort.column) {
+                            case 'tarih':
+                                valueA = new Date(a.tarih);
+                                valueB = new Date(b.tarih);
+                                break;
+                            case 'miktar':
+                            case 'alisFiyati':
+                            case 'fiyat':
+                                valueA = parseFloat(a[currentSalesSort.column]) || 0;
+                                valueB = parseFloat(b[currentSalesSort.column]) || 0;
+                                break;
+                            case 'borc':
+                                valueA = a.borc ? 1 : 0;
+                                valueB = b.borc ? 1 : 0;
+                                break;
+                            case 'musteriAdi':
+                                // Müşteri adını bul
+                                const musteriA = a.musteriId && musteriler[a.musteriId] ? musteriler[a.musteriId].ad : '';
+                                const musteriB = b.musteriId && musteriler[b.musteriId] ? musteriler[b.musteriId].ad : '';
+                                valueA = musteriA.toLowerCase();
+                                valueB = musteriB.toLowerCase();
+                                break;
+                            default:
+                                valueA = a[currentSalesSort.column] || '';
+                                valueB = b[currentSalesSort.column] || '';
+                                if (typeof valueA === 'string') {
+                                    valueA = valueA.toLowerCase();
+                                    valueB = valueB.toLowerCase();
+                                }
+                        }
+                        
+                        if (valueA < valueB) return currentSalesSort.direction === 'asc' ? -1 : 1;
+                        if (valueA > valueB) return currentSalesSort.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                
+                sortedSales.forEach(satis => {
                     const tr = document.createElement('tr');
                     const tarih = new Date(satis.tarih);
                     const tarihStr = `${tarih.getDate().toString().padStart(2, '0')}.${(tarih.getMonth()+1).toString().padStart(2, '0')}.${tarih.getFullYear()} ${tarih.getHours().toString().padStart(2, '0')}:${tarih.getMinutes().toString().padStart(2, '0')}`;
@@ -4055,6 +4187,19 @@
             stokTablosunuGuncelle();
         }
         
+        // Satış geçmişi tablosunu sırala
+        function sortSalesTable(column) {
+            // Sıralama yönünü belirle
+            if (currentSalesSort.column === column) {
+                currentSalesSort.direction = currentSalesSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSalesSort.column = column;
+                currentSalesSort.direction = 'asc';
+            }
+            
+            satisGecmisiniGuncelle();
+        }
+        
         // Senkronizasyon durumunu güncelle
         function updateSyncStatus(status, text) {
             const indicator = document.getElementById('syncIndicator');
@@ -4495,48 +4640,204 @@
             satisGecmisi.forEach(satis => {
                 const productKey = satis.urunAdi;
                 if (!productSales[productKey]) {
-                    productSales[productKey] = 0;
+                    productSales[productKey] = {
+                        sales: 0,
+                        revenue: 0,
+                        barkod: '',
+                        price: 0
+                    };
                 }
-                productSales[productKey] += satis.miktar;
-            });
-            
-            // En çok satan 10 ürünü belirle
-            const sortedProducts = Object.entries(productSales)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10);
-            
-            // HTML içeriği oluştur
-            let htmlContent = '<ul class="best-sellers-list">';
-            
-            sortedProducts.forEach(([product, sales], index) => {
-                // Bu ürünün barkodunu bul
-                let barkod = '';
+                productSales[productKey].sales += satis.miktar;
+                productSales[productKey].revenue += satis.toplam || 0;
+                
+                // Find product details
                 for (const [id, urun] of Object.entries(stokListesi)) {
-                    if (urun.ad === product) {
-                        barkod = urun.barkod || id;
+                    if (urun.ad === productKey) {
+                        productSales[productKey].barkod = urun.barkod || id;
+                        productSales[productKey].price = urun.satisFiyati || 0;
                         break;
                     }
                 }
-                
-                htmlContent += `
-                    <li>
-                        <span>
-                            <strong>${index + 1}. ${product}</strong>
-                            <div style="font-size: 12px; color: #666;">Satış Adedi: ${sales}</div>
-                        </span>
-                        <div class="action-buttons">
-                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${barkod}')">
-                                <i class="fas fa-cash-register"></i>
-                            </button>
-                        </div>
-                    </li>
-                `;
             });
             
-            htmlContent += '</ul>';
+            // Convert to array and sort by sales
+            const sortedProducts = Object.entries(productSales)
+                .map(([product, data]) => ({
+                    name: product,
+                    sales: data.sales,
+                    revenue: data.revenue,
+                    barkod: data.barkod,
+                    price: data.price
+                }))
+                .sort((a, b) => b.sales - a.sales)
+                .slice(0, 15);
             
-            document.getElementById('bestSellersList').innerHTML = htmlContent;
-            document.getElementById('bestSellersModal').style.display = 'flex';
+            // Create modal with sorting options
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 800px;">
+                    <div class="modal-header">
+                        <h2><i class="fas fa-star"></i> En Çok Satan Ürünler</h2>
+                        <span class="close" onclick="this.parentElement.parentElement.remove()">&times;</span>
+                    </div>
+                    <div class="modal-body">
+                        <div style="margin-bottom: 15px;">
+                            <label style="margin-right: 10px;">Sıralama:</label>
+                            <select id="bestSellersSort" onchange="sortBestSellers()" class="form-control" style="display: inline-block; width: auto;">
+                                <option value="sales">Satış Adedi (Azalan)</option>
+                                <option value="sales-asc">Satış Adedi (Artan)</option>
+                                <option value="revenue">Gelir (Azalan)</option>
+                                <option value="revenue-asc">Gelir (Artan)</option>
+                                <option value="name">Ürün Adı (A-Z)</option>
+                                <option value="name-desc">Ürün Adı (Z-A)</option>
+                            </select>
+                        </div>
+                        <div id="bestSellersList" class="best-sellers-list">
+                            ${generateBestSellersHTML(sortedProducts)}
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            // Store data for sorting
+            window.bestSellersData = sortedProducts;
+        }
+        
+        // Generate HTML for best sellers list
+        function generateBestSellersHTML(products) {
+            return products.map((product, index) => `
+                <li style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--border-color);">
+                    <div style="flex: 1;">
+                        <div style="font-weight: bold; color: var(--text-primary);">${index + 1}. ${product.name}</div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                            Satış Adedi: ${product.sales} | Gelir: ${product.revenue.toFixed(2)} ₺ | Fiyat: ${product.price.toFixed(2)} ₺
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-success btn-sm" title="Hızlı Satış" onclick="quickSell('${product.barkod}')">
+                            <i class="fas fa-cash-register"></i> Sat
+                        </button>
+                        <button class="btn btn-info btn-sm" title="Ürün Detayları" onclick="showProductDetails('${product.barkod}')">
+                            <i class="fas fa-info-circle"></i>
+                        </button>
+                    </div>
+                </li>
+            `).join('');
+        }
+        
+        // Sort best sellers
+        function sortBestSellers() {
+            if (!window.bestSellersData) return;
+            
+            const sortType = document.getElementById('bestSellersSort').value;
+            let sorted = [...window.bestSellersData];
+            
+            switch(sortType) {
+                case 'sales':
+                    sorted.sort((a, b) => b.sales - a.sales);
+                    break;
+                case 'sales-asc':
+                    sorted.sort((a, b) => a.sales - b.sales);
+                    break;
+                case 'revenue':
+                    sorted.sort((a, b) => b.revenue - a.revenue);
+                    break;
+                case 'revenue-asc':
+                    sorted.sort((a, b) => a.revenue - b.revenue);
+                    break;
+                case 'name':
+                    sorted.sort((a, b) => a.name.localeCompare(b.name));
+                    break;
+                case 'name-desc':
+                    sorted.sort((a, b) => b.name.localeCompare(a.name));
+                    break;
+            }
+            
+            document.getElementById('bestSellersList').innerHTML = generateBestSellersHTML(sorted);
+        }
+        
+        // Quick sell function
+        function quickSell(barkod) {
+            // Find product details
+            let product = null;
+            for (const [id, urun] of Object.entries(stokListesi)) {
+                if (urun.barkod === barkod || id === barkod) {
+                    product = urun;
+                    break;
+                }
+            }
+            
+            if (!product) {
+                Swal.fire('Hata', 'Ürün bulunamadı!', 'error');
+                return;
+            }
+            
+            // Show quick sell modal
+            Swal.fire({
+                title: 'Hızlı Satış',
+                html: `
+                    <div style="text-align: left;">
+                        <p><strong>Ürün:</strong> ${product.ad}</p>
+                        <p><strong>Mevcut Stok:</strong> ${product.miktar}</p>
+                        <p><strong>Satış Fiyatı:</strong> ${product.satisFiyati} ₺</p>
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <label>Satış Miktarı:</label>
+                        <input type="number" id="quickSellAmount" class="swal2-input" value="1" min="1" max="${product.miktar}">
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Sat',
+                cancelButtonText: 'İptal',
+                preConfirm: () => {
+                    const amount = parseInt(document.getElementById('quickSellAmount').value);
+                    if (!amount || amount < 1 || amount > product.miktar) {
+                        Swal.showValidationMessage('Geçerli bir miktar girin!');
+                        return false;
+                    }
+                    return amount;
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Perform the sale
+                    urunSat(barkod, result.value);
+                }
+            });
+        }
+        
+        // Show product details
+        function showProductDetails(barkod) {
+            let product = null;
+            for (const [id, urun] of Object.entries(stokListesi)) {
+                if (urun.barkod === barkod || id === barkod) {
+                    product = urun;
+                    break;
+                }
+            }
+            
+            if (!product) {
+                Swal.fire('Hata', 'Ürün bulunamadı!', 'error');
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Ürün Detayları',
+                html: `
+                    <div style="text-align: left;">
+                        <p><strong>Ürün Adı:</strong> ${product.ad}</p>
+                        <p><strong>Barkod:</strong> ${product.barkod}</p>
+                        <p><strong>Marka:</strong> ${product.marka || 'Belirtilmemiş'}</p>
+                        <p><strong>Kategori:</strong> ${product.kategori || 'Belirtilmemiş'}</p>
+                        <p><strong>Stok Miktarı:</strong> ${product.miktar}</p>
+                        <p><strong>Alış Fiyatı:</strong> ${product.alisFiyati} ₺</p>
+                        <p><strong>Satış Fiyatı:</strong> ${product.satisFiyati} ₺</p>
+                        <p><strong>Açıklama:</strong> ${product.aciklama || 'Açıklama yok'}</p>
+                    </div>
+                `,
+                confirmButtonText: 'Tamam'
+            });
         }
         
         // Satış analizi modalını göster
@@ -5443,123 +5744,7 @@
             }
         }
         
-        // Yeni özellikler - Toplu İşlemler
-        function showBulkOperations() {
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.innerHTML = `
-                <div class="modal-content" style="max-width: 600px;">
-                    <div class="modal-header">
-                        <h2><i class="fas fa-tasks"></i> Toplu İşlemler</h2>
-                        <span class="close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</span>
-                    </div>
-                    <div class="modal-body">
-                        <div class="form-group">
-                            <label>İşlem Türü:</label>
-                            <select id="bulkOperationType" class="form-control" onchange="updateBulkOperationDescription()">
-                                <option value="price_update">Fiyat Güncelleme</option>
-                                <option value="stock_update">Stok Güncelleme</option>
-                                <option value="category_update">Kategori Güncelleme</option>
-                                <option value="delete_selected">Seçili Ürünleri Sil</option>
-                            </select>
-                        </div>
-                        
-                        <div id="bulkOperationDescription" style="background: var(--light-gray); padding: 10px; border-radius: 5px; margin: 10px 0; font-size: 14px;">
-                            <strong>Fiyat Güncelleme:</strong> Seçili ürünlerin satış fiyatlarını toplu olarak güncelleyin.
-                        </div>
-                        
-                        <div id="bulkOperationFields">
-                            <div class="form-group">
-                                <label>Yeni Değer:</label>
-                                <input type="text" id="bulkValue" class="form-control" placeholder="Yeni değer girin">
-                            </div>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Seçili Ürünler:</label>
-                            <div id="selectedProducts" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; margin-top: 10px;">
-                                <p>Henüz ürün seçilmedi</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-primary" onclick="executeBulkOperation()">
-                            <i class="fas fa-play"></i> İşlemi Uygula
-                        </button>
-                        <button class="btn btn-outline" onclick="this.parentElement.parentElement.parentElement.remove()">
-                            <i class="fas fa-times"></i> İptal
-                        </button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-        }
-        
-        // Toplu işlem açıklamasını güncelle
-        function updateBulkOperationDescription() {
-            const operationType = document.getElementById('bulkOperationType').value;
-            const descriptionDiv = document.getElementById('bulkOperationDescription');
-            
-            const descriptions = {
-                'price_update': '<strong>Fiyat Güncelleme:</strong> Seçili ürünlerin satış fiyatlarını toplu olarak güncelleyin.',
-                'stock_update': '<strong>Stok Güncelleme:</strong> Seçili ürünlerin stok miktarlarını toplu olarak güncelleyin.',
-                'category_update': '<strong>Kategori Güncelleme:</strong> Seçili ürünleri belirtilen kategoriye atayın.',
-                'delete_selected': '<strong>Seçili Ürünleri Sil:</strong> Seçili ürünleri stoktan tamamen kaldırın. Bu işlem geri alınamaz!'
-            };
-            
-            descriptionDiv.innerHTML = descriptions[operationType] || '';
-        }
 
-        // Kategori Yönetimi
-        function showCategoryManager() {
-            const categories = [...new Set(Object.values(stokListesi).map(urun => urun.kategori).filter(k => k))];
-            
-            const modal = document.createElement('div');
-            modal.className = 'modal';
-            modal.innerHTML = `
-                <div class="modal-content" style="max-width: 500px;">
-                    <div class="modal-header">
-                        <h2><i class="fas fa-tags"></i> Kategori Yönetimi</h2>
-                        <span class="close" onclick="this.parentElement.parentElement.parentElement.remove()">&times;</span>
-                    </div>
-                    <div class="modal-body">
-                        <div style="background: var(--light-gray); padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 14px;">
-                            <strong>Kategori Yönetimi Nedir?</strong><br>
-                            Ürünlerinizi kategorilere ayırarak daha kolay yönetebilirsiniz. 
-                            Örneğin: "Motor Yağı", "Fren Sistemi", "Elektrik" gibi kategoriler oluşturabilirsiniz.
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Yeni Kategori:</label>
-                            <input type="text" id="newCategory" class="form-control" placeholder="Kategori adı girin">
-                        </div>
-                        
-                        <div class="form-group">
-                            <label>Mevcut Kategoriler:</label>
-                            <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; margin-top: 10px;">
-                                ${categories.length > 0 ? categories.map(cat => `
-                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border-color);">
-                                        <span>${cat}</span>
-                                        <button class="btn btn-danger btn-sm" onclick="deleteCategory('${cat}')" title="Bu kategoriyi sil ve ürünlerden kaldır">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </div>
-                                `).join('') : '<p style="color: var(--text-secondary);">Henüz kategori bulunmuyor</p>'}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button class="btn btn-primary" onclick="addCategory()">
-                            <i class="fas fa-plus"></i> Kategori Ekle
-                        </button>
-                        <button class="btn btn-outline" onclick="this.parentElement.parentElement.parentElement.remove()">
-                            <i class="fas fa-times"></i> Kapat
-                        </button>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
-        }
         
         // Gelişmiş Arama
         function advancedSearch() {
