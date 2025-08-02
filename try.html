@@ -2461,35 +2461,42 @@
                 if (result.success && result.data) {
                     console.log('✅ Backend verisi başarıyla alındı');
                     
-                    // Verileri güncelle
-                    stokListesi = result.data.stokListesi || {};
-                    satisGecmisi = result.data.satisGecmisi || [];
-                    musteriler = result.data.musteriler || {};
-                    borclarim = result.data.borclarim || {};
+                    // Backend'den gelen verileri kontrol et
+                    const backendStokListesi = result.data.stokListesi || {};
+                    const backendSatisGecmisi = result.data.satisGecmisi || [];
+                    const backendMusteriler = result.data.musteriler || {};
+                    const backendBorclarim = result.data.borclarim || {};
                     
                     // Validate data integrity
-                    const stokCount = Object.keys(stokListesi).length;
-                    const satisCount = satisGecmisi.length;
-                    const musteriCount = Object.keys(musteriler).length;
+                    const stokCount = Object.keys(backendStokListesi).length;
+                    const satisCount = backendSatisGecmisi.length;
+                    const musteriCount = Object.keys(backendMusteriler).length;
                     
-                    console.log('📊 Yüklenen veriler:', {
+                    console.log('📊 Backend\'den yüklenen veriler:', {
                         stok: stokCount,
                         satis: satisCount,
                         musteri: musteriCount
                     });
                     
-                    // Show warning if no data found
-                    if (stokCount === 0 && satisCount === 0 && musteriCount === 0) {
-                        console.warn('⚠️ No data found in database');
-                        showNotification('Veritabanında veri bulunamadı', 'warning');
+                    // Eğer backend'de veri varsa, local verileri güncelle
+                    if (stokCount > 0 || satisCount > 0 || musteriCount > 0) {
+                        stokListesi = backendStokListesi;
+                        satisGecmisi = backendSatisGecmisi;
+                        musteriler = backendMusteriler;
+                        borclarim = backendBorclarim;
+                        
+                        // Backend verisini localStorage'a kaydet
+                        localStorage.setItem('saban_data', JSON.stringify({
+                            stokListesi, satisGecmisi, musteriler, borclarim,
+                            lastSync: new Date().toISOString(),
+                            source: 'backend'
+                        }));
+                        
+                        console.log('✅ Backend verileri local verilerle güncellendi');
+                    } else {
+                        console.log('⚠️ Backend\'de veri bulunamadı, local veriler korunuyor');
+                        showNotification('Veritabanında veri bulunamadı, local veriler korunuyor', 'warning');
                     }
-                    
-                    // Backend verisini localStorage'a kaydet
-                    localStorage.setItem('saban_data', JSON.stringify({
-                        stokListesi, satisGecmisi, musteriler, borclarim,
-                        lastSync: new Date().toISOString(),
-                        source: 'backend'
-                    }));
                     
                     // UI'yi güncelle
                     stokTablosunuGuncelle();
@@ -2527,34 +2534,43 @@
                 
                 if (result.success && result.data) {
                     console.log('✅ Backend verisi başarıyla alındı');
-                    stokListesi = result.data.stokListesi || {};
-                    satisGecmisi = result.data.satisGecmisi || [];
-                    musteriler = result.data.musteriler || {};
-                    borclarim = result.data.borclarim || {};
+                    
+                    // Backend'den gelen verileri kontrol et
+                    const backendStokListesi = result.data.stokListesi || {};
+                    const backendSatisGecmisi = result.data.satisGecmisi || [];
+                    const backendMusteriler = result.data.musteriler || {};
+                    const backendBorclarim = result.data.borclarim || {};
                     
                     // Validate data integrity
-                    const stokCount = Object.keys(stokListesi).length;
-                    const satisCount = satisGecmisi.length;
-                    const musteriCount = Object.keys(musteriler).length;
+                    const stokCount = Object.keys(backendStokListesi).length;
+                    const satisCount = backendSatisGecmisi.length;
+                    const musteriCount = Object.keys(backendMusteriler).length;
                     
-                    console.log('📊 Yüklenen veriler:', {
+                    console.log('📊 Backend\'den yüklenen veriler:', {
                         stok: stokCount,
                         satis: satisCount,
                         musteri: musteriCount
                     });
                     
-                    // Show warning if no data found
-                    if (stokCount === 0 && satisCount === 0 && musteriCount === 0) {
-                        console.warn('⚠️ No data found in database');
-                        showNotification('Veritabanında veri bulunamadı', 'warning');
+                    // Eğer backend'de veri varsa, local verileri güncelle
+                    if (stokCount > 0 || satisCount > 0 || musteriCount > 0) {
+                        stokListesi = backendStokListesi;
+                        satisGecmisi = backendSatisGecmisi;
+                        musteriler = backendMusteriler;
+                        borclarim = backendBorclarim;
+                        
+                        // Backend verisini localStorage'a kaydet
+                        localStorage.setItem('saban_data', JSON.stringify({
+                            stokListesi, satisGecmisi, musteriler, borclarim,
+                            lastSync: new Date().toISOString(),
+                            source: 'backend'
+                        }));
+                        
+                        console.log('✅ Backend verileri local verilerle güncellendi');
+                    } else {
+                        console.log('⚠️ Backend\'de veri bulunamadı, local veriler korunuyor');
+                        showNotification('Veritabanında veri bulunamadı, local veriler korunuyor', 'warning');
                     }
-                    
-                    // Backend verisini localStorage'a kaydet
-                    localStorage.setItem('saban_data', JSON.stringify({
-                        stokListesi, satisGecmisi, musteriler, borclarim,
-                        lastSync: new Date().toISOString(),
-                        source: 'backend'
-                    }));
                     
                     // UI'yi güncelle
                     stokTablosunuGuncelle();
@@ -2618,17 +2634,34 @@
         // Local storage'a kaydet (sadece local backup için) - İyileştirilmiş
         function guncellenenVerileriKaydet() {
             try {
+                // Veri bütünlüğünü kontrol et
+                const stokCount = Object.keys(stokListesi || {}).length;
+                const satisCount = (satisGecmisi || []).length;
+                const musteriCount = Object.keys(musteriler || {}).length;
+                const borcCount = Object.keys(borclarim || {}).length;
+                
+                // Eğer hiç veri yoksa kaydetme
+                if (stokCount === 0 && satisCount === 0 && musteriCount === 0 && borcCount === 0) {
+                    console.log('⚠️ Kaydedilecek veri bulunamadı, localStorage güncellenmedi');
+                    return;
+                }
+                
                 const dataToSave = {
-                    stokListesi,
-                    satisGecmisi,
-                    musteriler,
-                    borclarim,
+                    stokListesi: stokListesi || {},
+                    satisGecmisi: satisGecmisi || [],
+                    musteriler: musteriler || {},
+                    borclarim: borclarim || {},
                     lastSync: new Date().toISOString(),
                     source: 'local'
                 };
                 
                 localStorage.setItem('saban_data', JSON.stringify(dataToSave));
-                console.log('💾 LocalStorage\'a kaydedildi');
+                console.log('💾 LocalStorage\'a kaydedildi:', {
+                    stok: stokCount,
+                    satis: satisCount,
+                    musteri: musteriCount,
+                    borc: borcCount
+                });
                 
                 // Auto-sync to backend if connected
                 if (socket.connected) {
@@ -2671,18 +2704,40 @@
             if (local) {
                 try {
                     const result = JSON.parse(local);
-                    stokListesi = result.stokListesi || {};
-                    satisGecmisi = result.satisGecmisi || [];
-                    musteriler = result.musteriler || {};
-                    borclarim = result.borclarim || {};
                     
-                    console.log('⚡ LocalStorage\'dan hızlı yükleme yapıldı');
+                    // Veri bütünlüğünü kontrol et
+                    const localStokListesi = result.stokListesi || {};
+                    const localSatisGecmisi = result.satisGecmisi || [];
+                    const localMusteriler = result.musteriler || {};
+                    const localBorclarim = result.borclarim || {};
                     
-                    // UI'yi güncelle
-                    stokTablosunuGuncelle();
-                    satisTablosunuGuncelle();
-                    musteriTablosunuGuncelle();
-                    guncelleIstatistikler();
+                    const stokCount = Object.keys(localStokListesi).length;
+                    const satisCount = localSatisGecmisi.length;
+                    const musteriCount = Object.keys(localMusteriler).length;
+                    const borcCount = Object.keys(localBorclarim).length;
+                    
+                    // Eğer localStorage'da veri varsa yükle
+                    if (stokCount > 0 || satisCount > 0 || musteriCount > 0 || borcCount > 0) {
+                        stokListesi = localStokListesi;
+                        satisGecmisi = localSatisGecmisi;
+                        musteriler = localMusteriler;
+                        borclarim = localBorclarim;
+                        
+                        console.log('⚡ LocalStorage\'dan hızlı yükleme yapıldı:', {
+                            stok: stokCount,
+                            satis: satisCount,
+                            musteri: musteriCount,
+                            borc: borcCount
+                        });
+                        
+                        // UI'yi güncelle
+                        stokTablosunuGuncelle();
+                        satisTablosunuGuncelle();
+                        musteriTablosunuGuncelle();
+                        guncelleIstatistikler();
+                    } else {
+                        console.log('⚠️ LocalStorage\'da veri bulunamadı');
+                    }
                 } catch (e) {
                     console.error('❌ LocalStorage okunamadı:', e);
                 }
