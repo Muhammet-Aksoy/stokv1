@@ -954,6 +954,55 @@
             justify-content: space-between;
             align-items: center;
         }
+        
+        .modal-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .btn-copy {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        .btn-copy:hover {
+            background: var(--success-hover);
+        }
+        
+        .barcode-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .barcode-text {
+            flex: 1;
+        }
+        
+        .copy-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: background-color 0.3s;
+        }
+        
+        .copy-btn:hover {
+            background: var(--primary-hover);
+        }
 
         .modal-header h2 {
             font-size: 18px;
@@ -1978,8 +2027,13 @@
     <div class="modal" id="lowStockModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Düşük Stoklu Ürünler (Stok = 1)</h2>
-                <button class="close-modal" onclick="closeModal()">&times;</button>
+                <h2>Düşük Stoklu Ürünler (Stok ≤ 1)</h2>
+                <div class="modal-actions">
+                    <button class="btn btn-copy" onclick="copyLowStockList()" title="Listeyi Kopyala">
+                        <i class="fas fa-copy"></i> Kopyala
+                    </button>
+                    <button class="close-modal" onclick="closeModal()">&times;</button>
+                </div>
             </div>
             <div class="modal-body">
                 <div class="table-container">
@@ -2857,7 +2911,13 @@
                 if (stockZeroClass) tr.classList.add(stockZeroClass);
                 
                 tr.innerHTML = `
-                    <td class="barcode-cell tooltip">${urun.barkod || '-'}
+                    <td class="barcode-cell tooltip">
+                        <div class="barcode-container">
+                            <span class="barcode-text">${urun.barkod || '-'}</span>
+                            <button class="copy-btn" onclick="copyBarcode('${urun.barkod || ''}')" title="Barkodu Kopyala">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
                         <span class="tooltiptext">Çift tıklayarak arama yapabilirsiniz</span>
                     </td>
                     <td>
@@ -2899,7 +2959,12 @@
                                 ${urun.urun_adi || urun.ad || ''}
                             </span>
                         </h3>
-                        <p>${urun.barkod || '-'}</p>
+                        <div class="barcode-container">
+                            <span class="barcode-text">${urun.barkod || '-'}</span>
+                            <button class="copy-btn" onclick="copyBarcode('${urun.barkod || ''}')" title="Barkodu Kopyala">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
                         ${urun.marka ? `<p style="font-size: 12px; color: #888;">${urun.marka}</p>` : ''}
                     </div>
                     <div class="product-body">
@@ -3829,27 +3894,100 @@
             lowStockBody.innerHTML = '';
             
             let hasLowStock = false;
+            let lowStockProducts = [];
             
             for (const [barkod, urun] of Object.entries(stokListesi)) {
-                if (urun.miktar === 1) {
+                const stockAmount = urun.stok_miktari || urun.miktar || 0;
+                if (stockAmount <= 1) {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
-                        <td>${urun.barkod || '-'}</td>
+                        <td>
+                            <div class="barcode-container">
+                                <span class="barcode-text">${urun.barkod || '-'}</span>
+                                <button class="copy-btn" onclick="copyBarcode('${urun.barkod || ''}')" title="Barkodu Kopyala">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </td>
                         <td>${urun.urun_adi || urun.ad || ''}</td>
                         <td>${urun.marka || '-'}</td>
-                        <td>${urun.miktar}</td>
+                        <td>${stockAmount}</td>
                     `;
                     
                     lowStockBody.appendChild(tr);
                     hasLowStock = true;
+                    lowStockProducts.push({
+                        barkod: urun.barkod || '-',
+                        urun_adi: urun.urun_adi || urun.ad || '',
+                        marka: urun.marka || '-',
+                        miktar: stockAmount
+                    });
                 }
             }
             
             if (hasLowStock) {
+                // Store low stock products for copy functionality
+                window.lowStockProducts = lowStockProducts;
                 document.getElementById('lowStockModal').style.display = 'flex';
             } else {
                 Swal.fire('Bilgi', 'Düşük stoklu ürün bulunmamaktadır.', 'info');
             }
+        }
+        
+        // Düşük stok listesini kopyala
+        function copyLowStockList() {
+            if (!window.lowStockProducts || window.lowStockProducts.length === 0) {
+                Swal.fire('Hata', 'Kopyalanacak düşük stoklu ürün bulunamadı.', 'error');
+                return;
+            }
+            
+            let copyText = 'DÜŞÜK STOKLU ÜRÜNLER LİSTESİ\n';
+            copyText += '='.repeat(30) + '\n\n';
+            
+            window.lowStockProducts.forEach((urun, index) => {
+                copyText += `${index + 1}. ${urun.urun_adi}\n`;
+                copyText += `   Barkod: ${urun.barkod}\n`;
+                copyText += `   Marka: ${urun.marka}\n`;
+                copyText += `   Stok: ${urun.miktar}\n`;
+                copyText += '\n';
+            });
+            
+            copyText += `Toplam: ${window.lowStockProducts.length} ürün\n`;
+            copyText += `Tarih: ${new Date().toLocaleDateString('tr-TR')}`;
+            
+            navigator.clipboard.writeText(copyText).then(() => {
+                Swal.fire('Başarılı', 'Düşük stoklu ürünler listesi panoya kopyalandı.', 'success');
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = copyText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                Swal.fire('Başarılı', 'Düşük stoklu ürünler listesi panoya kopyalandı.', 'success');
+            });
+        }
+        
+        // Barkod kopyala
+        function copyBarcode(barkod) {
+            if (!barkod || barkod === '-') {
+                Swal.fire('Hata', 'Kopyalanacak barkod bulunamadı.', 'error');
+                return;
+            }
+            
+            navigator.clipboard.writeText(barkod).then(() => {
+                Swal.fire('Başarılı', 'Barkod panoya kopyalandı.', 'success');
+            }).catch(() => {
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = barkod;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                Swal.fire('Başarılı', 'Barkod panoya kopyalandı.', 'success');
+            });
         }
         
         // Görünüm değiştirme
