@@ -210,17 +210,19 @@ io.on('connection', (socket) => {
                                 return;
                             }
                             
+                            // Map database columns to frontend expected format
                             stokListesi[key] = {
                                 id: row.id,
                                 barkod: row.barkod,
-                                urun_adi: row.urun_adi,
-                                marka: row.marka,
-                                kategori: row.kategori,
-                                fiyat: row.fiyat,
-                                stok_miktari: row.stok_miktari,
-                                min_stok: row.min_stok,
-                                varyant_id: row.varyant_id,
-                                varyant_adi: row.varyant_adi,
+                                urun_adi: row.ad || '', // Map 'ad' to 'urun_adi'
+                                marka: row.marka || '',
+                                kategori: row.kategori || '',
+                                fiyat: row.satisFiyati || 0, // Map 'satisFiyati' to 'fiyat'
+                                stok_miktari: row.miktar || 0, // Map 'miktar' to 'stok_miktari'
+                                min_stok: 0, // Default value since this column doesn't exist in DB
+                                alisFiyati: row.alisFiyati || 0, // Keep original purchase price
+                                varyant_id: row.varyant_id || '',
+                                varyant_adi: '', // Default value since this column doesn't exist in DB
                                 created_at: row.created_at,
                                 updated_at: row.updated_at
                             };
@@ -403,7 +405,22 @@ app.get('/api/tum-veriler', async (req, res) => {
                     // Use composite key (barkod + marka + varyant_id) to handle variants
                     const key = `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
                     if (row.barkod) {
-                        stokListesi[key] = row; 
+                        // Map database columns to frontend expected format
+                        stokListesi[key] = {
+                            id: row.id,
+                            barkod: row.barkod,
+                            urun_adi: row.ad || '', // Map 'ad' to 'urun_adi'
+                            marka: row.marka || '',
+                            kategori: row.kategori || '',
+                            fiyat: row.satisFiyati || 0, // Map 'satisFiyati' to 'fiyat'
+                            stok_miktari: row.miktar || 0, // Map 'miktar' to 'stok_miktari'
+                            min_stok: 0, // Default value since this column doesn't exist in DB
+                            alisFiyati: row.alisFiyati || 0, // Keep original purchase price
+                            varyant_id: row.varyant_id || '',
+                            varyant_adi: '', // Default value since this column doesn't exist in DB
+                            created_at: row.created_at,
+                            updated_at: row.updated_at
+                        };
                     } else {
                         console.warn('⚠️ Product without barcode found:', row);
                     }
@@ -531,28 +548,28 @@ app.post('/api/tum-veriler', async (req, res) => {
                         // Update existing record only if data is different
                         const currentData = db.prepare('SELECT * FROM stok WHERE id = ?').get(existing.id);
                         const hasChanges = (
-                            currentData.urun_adi !== (urun.urun_adi || '') ||
-                            currentData.stok_miktari !== (parseInt(urun.stok_miktari) || 0) ||
-                            currentData.fiyat !== (parseFloat(urun.fiyat) || 0) ||
-                            currentData.kategori !== (urun.kategori || '') ||
-                            currentData.varyant_adi !== (urun.varyant_adi || '')
+                            currentData.ad !== (urun.urun_adi || urun.ad || '') ||
+                            currentData.miktar !== (parseInt(urun.stok_miktari || urun.miktar) || 0) ||
+                            currentData.satisFiyati !== (parseFloat(urun.fiyat) || 0) ||
+                            currentData.alisFiyati !== (parseFloat(urun.alisFiyati) || 0) ||
+                            currentData.kategori !== (urun.kategori || '')
                         );
                         
                         if (hasChanges) {
                             // Ensure proper data types and handle null/undefined values
-                            const urun_adi = urun.urun_adi || '';
-                            const stok_miktari = parseInt(urun.stok_miktari) || 0;
-                            const fiyat = parseFloat(urun.fiyat) || 0;
+                            // Map frontend format back to database format
+                            const ad = urun.urun_adi || urun.ad || '';
+                            const miktar = parseInt(urun.stok_miktari || urun.miktar) || 0;
+                            const satisFiyati = parseFloat(urun.fiyat) || 0;
+                            const alisFiyati = parseFloat(urun.alisFiyati) || 0;
                             const kategori = urun.kategori || '';
-                            const varyant_adi = urun.varyant_adi || '';
-                            const min_stok = parseInt(urun.min_stok) || 0;
                             
                             db.prepare(`
                                 UPDATE stok SET 
-                                    urun_adi = ?, stok_miktari = ?, fiyat = ?, 
-                                    kategori = ?, varyant_adi = ?, min_stok = ?, updated_at = CURRENT_TIMESTAMP
+                                    ad = ?, miktar = ?, satisFiyati = ?, alisFiyati = ?, 
+                                    kategori = ?, updated_at = CURRENT_TIMESTAMP
                                 WHERE barkod = ? AND marka = ? AND varyant_id = ?
-                            `).run(urun_adi, stok_miktari, fiyat, kategori, varyant_adi, min_stok, barkod, marka, varyant_id);
+                            `).run(ad, miktar, satisFiyati, alisFiyati, kategori, barkod, marka, varyant_id);
                             updatedCount++;
                         } else {
                             skippedCount++; // No changes needed
@@ -560,17 +577,17 @@ app.post('/api/tum-veriler', async (req, res) => {
                     } else {
                         // Insert new record - allow multiple products with same barcode
                         // Ensure proper data types and handle null/undefined values
-                        const urun_adi = urun.urun_adi || '';
-                        const stok_miktari = parseInt(urun.stok_miktari) || 0;
-                        const fiyat = parseFloat(urun.fiyat) || 0;
+                        // Map frontend format to database format
+                        const ad = urun.urun_adi || urun.ad || '';
+                        const miktar = parseInt(urun.stok_miktari || urun.miktar) || 0;
+                        const satisFiyati = parseFloat(urun.fiyat) || 0;
+                        const alisFiyati = parseFloat(urun.alisFiyati) || 0;
                         const kategori = urun.kategori || '';
-                        const varyant_adi = urun.varyant_adi || '';
-                        const min_stok = parseInt(urun.min_stok) || 0;
                         
                         db.prepare(`
-                            INSERT INTO stok (barkod, urun_adi, marka, stok_miktari, fiyat, kategori, varyant_id, varyant_adi, min_stok)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        `).run(barkod, urun_adi, marka, stok_miktari, fiyat, kategori, varyant_id, varyant_adi, min_stok);
+                            INSERT INTO stok (barkod, ad, marka, miktar, satisFiyati, alisFiyati, kategori, varyant_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        `).run(barkod, ad, marka, miktar, satisFiyati, alisFiyati, kategori, varyant_id);
                         insertedCount++;
                     }
                 } catch (e) {

@@ -2759,9 +2759,10 @@
             
             for (const [barkod, urun] of Object.entries(stokListesi)) {
                 // Alış fiyatı ile stok değerini hesapla
-                toplamDeger += urun.miktar * (urun.alisFiyati || 0);
+                const miktar = urun.stok_miktari || urun.miktar || 0;
+                toplamDeger += miktar * (urun.alisFiyati || 0);
                 
-                if (urun.miktar === 1) {
+                if (miktar === 1) {
                     dusukStok++;
                 }
             }
@@ -2849,7 +2850,7 @@
                 }
                 
                 // Stok sıfır ise özel class ekle
-                const stockZeroClass = urun.miktar === 0 ? 'stock-zero' : '';
+                const stockZeroClass = (urun.stok_miktari || urun.miktar || 0) === 0 ? 'stock-zero' : '';
                 
                 // Tablo satırı oluştur
                 const tr = document.createElement('tr');
@@ -2861,15 +2862,15 @@
                     </td>
                     <td>
                         <span class="product-name-link" onclick="showProductDetails('${key}')">
-                            ${urun.ad}
+                            ${urun.urun_adi || urun.ad || ''}
                         </span>
                     </td>
                     <td>${urun.marka || '-'}</td>
-                    <td>${urun.miktar}${urun.miktar === 0 ? ' <span class="stock-zero-badge">STOK BİTTİ</span>' : ''}</td>
+                    <td>${urun.stok_miktari || urun.miktar || 0}${(urun.stok_miktari || urun.miktar || 0) === 0 ? ' <span class="stock-zero-badge">STOK BİTTİ</span>' : ''}</td>
                     <td>${urun.alisFiyati ? urun.alisFiyati.toFixed(2) : '-'}</td>
                     <td>
                         <div class="action-buttons">
-                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${urun.miktar === 0 ? 'disabled style="opacity:0.5;"' : ''}>
+                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${(urun.stok_miktari || urun.miktar || 0) === 0 ? 'disabled style="opacity:0.5;"' : ''}>
                                 <i class="fas fa-cash-register"></i>
                             </button>
                             <button class="action-btn btn-print" title="Barkod Bas" onclick="barkodBas('${urun.barkod}')">
@@ -2895,7 +2896,7 @@
                     <div class="product-header">
                         <h3 class="tooltip">
                             <span class="product-name-link" onclick="showProductDetails('${key}')">
-                                ${urun.ad}
+                                ${urun.urun_adi || urun.ad || ''}
                             </span>
                         </h3>
                         <p>${urun.barkod || '-'}</p>
@@ -2904,13 +2905,13 @@
                     <div class="product-body">
                         <div class="product-info">
                             <p><strong>Marka:</strong> ${urun.marka || '-'}</p>
-                            <p><strong>Stok:</strong> ${urun.miktar}${urun.miktar === 0 ? ' <span class="stock-zero-badge">STOK BİTTİ</span>' : ''}</p>
+                            <p><strong>Stok:</strong> ${urun.stok_miktari || urun.miktar || 0}${(urun.stok_miktari || urun.miktar || 0) === 0 ? ' <span class="stock-zero-badge">STOK BİTTİ</span>' : ''}</p>
                             <p><strong>Alış Fiyatı:</strong> ${urun.alisFiyati ? urun.alisFiyati.toFixed(2) : '-'} ₺</p>
                         </div>
                     </div>
                     <div class="product-footer">
                         <div class="action-buttons">
-                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${urun.miktar === 0 ? 'disabled style="opacity:0.5;"' : ''}>
+                            <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${(urun.stok_miktari || urun.miktar || 0) === 0 ? 'disabled style="opacity:0.5;"' : ''}>
                                 <i class="fas fa-cash-register"></i>
                             </button>
                             <button class="action-btn btn-print" title="Barkod Bas" onclick="barkodBas('${urun.barkod}')">
@@ -2984,10 +2985,10 @@
             
             if (product) {
                 document.getElementById('detail-barkod').value = product.barkod;
-                document.getElementById('detail-urunAdi').value = product.ad;
+                document.getElementById('detail-urunAdi').value = product.urun_adi || product.ad || '';
                 document.getElementById('detail-marka').value = product.marka || '';
                 document.getElementById('detail-aciklama').value = product.aciklama || '';
-                document.getElementById('detail-miktar').value = product.miktar;
+                document.getElementById('detail-miktar').value = product.stok_miktari || product.miktar || 0;
                 document.getElementById('detail-alisFiyati').value = product.alisFiyati || '';
                 document.getElementById('detail-eklenmeTarihi').value = product.eklenmeTarihi ? 
                     new Date(product.eklenmeTarihi).toLocaleString('tr-TR') : '';
@@ -3390,12 +3391,16 @@
         // Satışı tamamla
         async function tamamlaSatis(key, miktar, musteriId, aciklama, satisFiyati) {
             const urun = stokListesi[key];
-            urun.miktar -= miktar;
+            // Update stock quantity using the correct field name
+            const currentStock = urun.stok_miktari || urun.miktar || 0;
+            urun.stok_miktari = currentStock - miktar;
+            // Keep backward compatibility
+            urun.miktar = urun.stok_miktari;
             const satis = {
                 id: Date.now().toString(36) + Math.random().toString(36).substring(2, 7),
                 tarih: new Date().toISOString(),
                 barkod: urun.barkod,
-                urunAdi: urun.ad,
+                urunAdi: urun.urun_adi || urun.ad || '',
                 marka: urun.marka || '',
                 miktar: miktar,
                 fiyat: satisFiyati,
@@ -3434,7 +3439,7 @@
                     satisTablosunuGuncelle();
                     guncelleIstatistikler();
                     
-                    if (urun.miktar === 0) {
+                    if (urun.stok_miktari === 0) {
                         Swal.fire('Bilgi', 'Bu ürünün stoğu tükendi.', 'info');
                     }
                     
@@ -3454,7 +3459,8 @@
                 Swal.fire('Hata', error.message || 'Satış kaydedilemedi', 'error');
                 
                 // Hata durumunda stoku geri al
-                urun.miktar += miktar;
+                urun.stok_miktari += miktar;
+                urun.miktar = urun.stok_miktari;
             }
         }
         
@@ -3515,12 +3521,16 @@
                 if (result.isConfirmed) {
                     // Stokta ürün varsa miktarını artır, yoksa yeni ekle
                     if (stokListesi[satis.barkod]) {
-                        stokListesi[satis.barkod].miktar += satis.miktar;
+                        const currentStock = stokListesi[satis.barkod].stok_miktari || stokListesi[satis.barkod].miktar || 0;
+                        stokListesi[satis.barkod].stok_miktari = currentStock + satis.miktar;
+                        stokListesi[satis.barkod].miktar = stokListesi[satis.barkod].stok_miktari;
                     } else {
                         stokListesi[satis.barkod] = {
-                            ad: satis.urunAdi,
+                            urun_adi: satis.urunAdi,
+                            ad: satis.urunAdi, // Backward compatibility
                             marka: satis.marka || '',
-                            miktar: satis.miktar,
+                            stok_miktari: satis.miktar,
+                            miktar: satis.miktar, // Backward compatibility
                             alisFiyati: satis.alisFiyati || 0,
                             eklenmeTarihi: new Date().toISOString()
                         };
@@ -3576,12 +3586,12 @@
                 return;
             }
             document.getElementById('barkod').value = urun.barkod; // Gerçek barkod değerini kullan
-            document.getElementById('urunAdi').value = urun.ad;
+            document.getElementById('urunAdi').value = urun.urun_adi || urun.ad || '';
             document.getElementById('marka').value = urun.marka || '';
             document.getElementById('aciklama').value = urun.aciklama || '';
-            document.getElementById('miktar').value = urun.miktar;
+            document.getElementById('miktar').value = urun.stok_miktari || urun.miktar || 0;
             document.getElementById('alisFiyati').value = urun.alisFiyati || '';
-            document.getElementById('satisFiyati').value = urun.satisFiyati || '';
+            document.getElementById('satisFiyati').value = urun.fiyat || urun.satisFiyati || '';
             document.getElementById('kategori').value = urun.kategori || '';
             
             // Düzenlenen ürün key'ini kaydet
@@ -3611,11 +3621,14 @@
             
             const urunData = {
                 barkod: barkod,
-                ad: ad,
+                urun_adi: ad,
+                ad: ad, // Backward compatibility
                 marka: marka,
-                miktar: miktar,
+                stok_miktari: miktar,
+                miktar: miktar, // Backward compatibility
                 alisFiyati: alisFiyati,
-                satisFiyati: satisFiyati,
+                fiyat: satisFiyati,
+                satisFiyati: satisFiyati, // Backward compatibility
                 kategori: kategori,
                 aciklama: aciklama
             };
@@ -3748,7 +3761,7 @@
             
             Swal.fire({
                 title: 'Silmeyi onayla',
-                html: `<b>${urun.ad}</b> ürününü silmek istediğinize emin misiniz?`,
+                html: `<b>${urun.urun_adi || urun.ad || ''}</b> ürününü silmek istediğinize emin misiniz?`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonText: 'Evet, Sil',
@@ -3822,7 +3835,7 @@
                     const tr = document.createElement('tr');
                     tr.innerHTML = `
                         <td>${urun.barkod || '-'}</td>
-                        <td>${urun.ad}</td>
+                        <td>${urun.urun_adi || urun.ad || ''}</td>
                         <td>${urun.marka || '-'}</td>
                         <td>${urun.miktar}</td>
                     `;
@@ -5798,7 +5811,7 @@
             const filteredProducts = Object.entries(stokListesi).filter(([barkod, urun]) => {
                 switch(searchType) {
                     case 'name':
-                        return urun.ad && urun.ad.toLowerCase().includes(searchTerm);
+                        return (urun.urun_adi || urun.ad || '') && (urun.urun_adi || urun.ad || '').toLowerCase().includes(searchTerm);
                     case 'barcode':
                         return urun.barkod && urun.barkod.toLowerCase().includes(searchTerm);
                     case 'brand':
@@ -5806,7 +5819,7 @@
                     case 'category':
                         return urun.kategori && urun.kategori.toLowerCase().includes(searchTerm);
                     default:
-                        return (urun.ad && urun.ad.toLowerCase().includes(searchTerm)) ||
+                        return ((urun.urun_adi || urun.ad || '') && (urun.urun_adi || urun.ad || '').toLowerCase().includes(searchTerm)) ||
                                (urun.barkod && urun.barkod.toLowerCase().includes(searchTerm)) ||
                                (urun.marka && urun.marka.toLowerCase().includes(searchTerm)) ||
                                (urun.kategori && urun.kategori.toLowerCase().includes(searchTerm));
@@ -5875,7 +5888,8 @@
                             urun.satisFiyati = parseFloat(bulkValue) || 0;
                             break;
                         case 'stock_update':
-                            urun.miktar = parseInt(bulkValue) || 0;
+                            urun.stok_miktari = parseInt(bulkValue) || 0;
+                            urun.miktar = urun.stok_miktari; // Backward compatibility
                             break;
                         case 'category_update':
                             urun.kategori = bulkValue;
