@@ -194,22 +194,49 @@ io.on('connection', (socket) => {
                     let musteriler = {};
                     let borclarim = {};
                     
-                    // Get stok data - FIXED: Handle variants properly
+                    // Get stok data - FIXED: Use consistent key format with validation
                     try {
                         const stokRows = db.prepare('SELECT * FROM stok ORDER BY updated_at DESC').all();
+                        console.log(`📦 Loading ${stokRows.length} stock items from database...`);
+                        
                         stokRows.forEach(row => { 
-                            // Use composite key (barkod + marka + varyant_id) to handle variants
-                            const key = `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
-                            stokListesi[key] = row;
+                            // Use the original product ID as key to maintain consistency with backup data
+                            // This prevents data loss during sync operations
+                            const key = row.id || `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
+                            
+                            // Validate required fields
+                            if (!row.barkod) {
+                                console.warn('⚠️ Skipping product without barcode:', row);
+                                return;
+                            }
+                            
+                            stokListesi[key] = {
+                                id: row.id,
+                                barkod: row.barkod,
+                                urun_adi: row.urun_adi,
+                                marka: row.marka,
+                                kategori: row.kategori,
+                                fiyat: row.fiyat,
+                                stok_miktari: row.stok_miktari,
+                                min_stok: row.min_stok,
+                                varyant_id: row.varyant_id,
+                                varyant_adi: row.varyant_adi,
+                                created_at: row.created_at,
+                                updated_at: row.updated_at
+                            };
                         });
-                    } catch (e) {
-                        console.warn('⚠️ Stok query error:', e.message);
-                        // Fallback
-                        const stokRows = db.prepare('SELECT * FROM stok ORDER BY id DESC').all();
-                        stokRows.forEach(row => { 
-                            const key = `${row.barkod}_${row.marka || ''}_${row.varyant_id || ''}`;
-                            stokListesi[key] = row;
-                        });
+                        
+                        console.log(`✅ Successfully loaded ${Object.keys(stokListesi).length} products`);
+                    } catch (error) {
+                        console.error('❌ Error loading stock data:', error);
+                        // Fallback to JSON file if database fails
+                        try {
+                            const jsonData = JSON.parse(fs.readFileSync('veriler/tumVeriler.json', 'utf8'));
+                            stokListesi = jsonData.stokListesi || {};
+                            console.log(`📄 Fallback: Loaded ${Object.keys(stokListesi).length} products from JSON`);
+                        } catch (jsonError) {
+                            console.error('❌ Failed to load from JSON fallback:', jsonError);
+                        }
                     }
                     
                     // Get satis data
@@ -486,8 +513,8 @@ app.post('/api/tum-veriler', async (req, res) => {
             // Sync stok data with improved deduplication
             for (const [key, urun] of Object.entries(stokListesi)) {
                 try {
-                    // Handle both old structure (product ID as key) and new structure (barcode as key)
-                    const barkod = urun.barkod || key;
+                    // Handle key format consistently - extract barkod from urun object, not from key
+                    const barkod = urun.barkod;
                     const marka = urun.marka || '';
                     const varyant_id = urun.varyant_id || '';
                     
@@ -504,29 +531,28 @@ app.post('/api/tum-veriler', async (req, res) => {
                         // Update existing record only if data is different
                         const currentData = db.prepare('SELECT * FROM stok WHERE id = ?').get(existing.id);
                         const hasChanges = (
-                            currentData.ad !== (urun.ad || '') ||
-                            currentData.miktar !== (parseInt(urun.miktar) || 0) ||
-                            currentData.alisFiyati !== (parseFloat(urun.alisFiyati) || 0) ||
-                            currentData.satisFiyati !== (parseFloat(urun.satisFiyati) || 0) ||
+                            currentData.urun_adi !== (urun.urun_adi || '') ||
+                            currentData.stok_miktari !== (parseInt(urun.stok_miktari) || 0) ||
+                            currentData.fiyat !== (parseFloat(urun.fiyat) || 0) ||
                             currentData.kategori !== (urun.kategori || '') ||
-                            currentData.aciklama !== (urun.aciklama || '')
+                            currentData.varyant_adi !== (urun.varyant_adi || '')
                         );
                         
                         if (hasChanges) {
                             // Ensure proper data types and handle null/undefined values
-                            const ad = urun.ad || '';
-                            const miktar = parseInt(urun.miktar) || 0;
-                            const alisFiyati = parseFloat(urun.alisFiyati) || 0;
-                            const satisFiyati = parseFloat(urun.satisFiyati) || 0;
+                            const urun_adi = urun.urun_adi || '';
+                            const stok_miktari = parseInt(urun.stok_miktari) || 0;
+                            const fiyat = parseFloat(urun.fiyat) || 0;
                             const kategori = urun.kategori || '';
-                            const aciklama = urun.aciklama || '';
+                            const varyant_adi = urun.varyant_adi || '';
+                            const min_stok = parseInt(urun.min_stok) || 0;
                             
                             db.prepare(`
                                 UPDATE stok SET 
-                                    ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                                    kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP
+                                    urun_adi = ?, stok_miktari = ?, fiyat = ?, 
+                                    kategori = ?, varyant_adi = ?, min_stok = ?, updated_at = CURRENT_TIMESTAMP
                                 WHERE barkod = ? AND marka = ? AND varyant_id = ?
-                            `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
+                            `).run(urun_adi, stok_miktari, fiyat, kategori, varyant_adi, min_stok, barkod, marka, varyant_id);
                             updatedCount++;
                         } else {
                             skippedCount++; // No changes needed
@@ -534,17 +560,17 @@ app.post('/api/tum-veriler', async (req, res) => {
                     } else {
                         // Insert new record - allow multiple products with same barcode
                         // Ensure proper data types and handle null/undefined values
-                        const ad = urun.ad || '';
-                        const miktar = parseInt(urun.miktar) || 0;
-                        const alisFiyati = parseFloat(urun.alisFiyati) || 0;
-                        const satisFiyati = parseFloat(urun.satisFiyati) || 0;
+                        const urun_adi = urun.urun_adi || '';
+                        const stok_miktari = parseInt(urun.stok_miktari) || 0;
+                        const fiyat = parseFloat(urun.fiyat) || 0;
                         const kategori = urun.kategori || '';
-                        const aciklama = urun.aciklama || '';
+                        const varyant_adi = urun.varyant_adi || '';
+                        const min_stok = parseInt(urun.min_stok) || 0;
                         
                         db.prepare(`
-                            INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id)
+                            INSERT INTO stok (barkod, urun_adi, marka, stok_miktari, fiyat, kategori, varyant_id, varyant_adi, min_stok)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        `).run(barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id);
+                        `).run(barkod, urun_adi, marka, stok_miktari, fiyat, kategori, varyant_id, varyant_adi, min_stok);
                         insertedCount++;
                     }
                 } catch (e) {
