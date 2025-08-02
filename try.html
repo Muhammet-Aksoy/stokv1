@@ -2288,18 +2288,29 @@
                     musteriler = result.data.musteriler || {};
                     borclarim = result.data.borclarim || {};
                     
+                    // Validate data integrity
+                    const stokCount = Object.keys(stokListesi).length;
+                    const satisCount = satisGecmisi.length;
+                    const musteriCount = Object.keys(musteriler).length;
+                    
+                    console.log('📊 Yüklenen veriler:', {
+                        stok: stokCount,
+                        satis: satisCount,
+                        musteri: musteriCount
+                    });
+                    
+                    // Show warning if no data found
+                    if (stokCount === 0 && satisCount === 0 && musteriCount === 0) {
+                        console.warn('⚠️ No data found in database');
+                        showNotification('Veritabanında veri bulunamadı', 'warning');
+                    }
+                    
                     // Backend verisini localStorage'a kaydet
                     localStorage.setItem('saban_data', JSON.stringify({
                         stokListesi, satisGecmisi, musteriler, borclarim,
                         lastSync: new Date().toISOString(),
                         source: 'backend'
                     }));
-                    
-                    console.log('📊 Yüklenen veriler:', {
-                        stok: Object.keys(stokListesi).length,
-                        satis: satisGecmisi.length,
-                        musteri: Object.keys(musteriler).length
-                    });
                     
                     // UI'yi güncelle
                     stokTablosunuGuncelle();
@@ -2342,18 +2353,29 @@
                     musteriler = result.data.musteriler || {};
                     borclarim = result.data.borclarim || {};
                     
+                    // Validate data integrity
+                    const stokCount = Object.keys(stokListesi).length;
+                    const satisCount = satisGecmisi.length;
+                    const musteriCount = Object.keys(musteriler).length;
+                    
+                    console.log('📊 Yüklenen veriler:', {
+                        stok: stokCount,
+                        satis: satisCount,
+                        musteri: musteriCount
+                    });
+                    
+                    // Show warning if no data found
+                    if (stokCount === 0 && satisCount === 0 && musteriCount === 0) {
+                        console.warn('⚠️ No data found in database');
+                        showNotification('Veritabanında veri bulunamadı', 'warning');
+                    }
+                    
                     // Backend verisini localStorage'a kaydet
                     localStorage.setItem('saban_data', JSON.stringify({
                         stokListesi, satisGecmisi, musteriler, borclarim,
                         lastSync: new Date().toISOString(),
                         source: 'backend'
                     }));
-                    
-                    console.log('📊 Yüklenen veriler:', {
-                        stok: Object.keys(stokListesi).length,
-                        satis: satisGecmisi.length,
-                        musteri: Object.keys(musteriler).length
-                    });
                     
                     // UI'yi güncelle
                     stokTablosunuGuncelle();
@@ -3452,7 +3474,13 @@
                         data: result.data
                     });
                     
-                    Swal.fire('Başarılı!', result.message, 'success');
+                    // Show appropriate message based on the operation
+                    let message = result.message;
+                    if (result.existingVariants && result.existingVariants > 0) {
+                        message += ` (${result.existingVariants} varyant mevcut)`;
+                    }
+                    
+                    Swal.fire('Başarılı!', message, 'success');
                     
                     // Formu temizle
                     document.getElementById('barkod').value = '';
