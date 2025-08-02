@@ -3643,8 +3643,8 @@
             };
         }
         
-        // Ürün iade
-        function urunIade(satisId) {
+        // Ürün iade (API ile entegre)
+        async function urunIade(satisId) {
             const satisIndex = satisGecmisi.findIndex(s => s.id === satisId);
             if (satisIndex === -1) return;
             
@@ -3659,47 +3659,71 @@
                 cancelButtonText: 'İptal',
                 confirmButtonColor: '#27ae60',
                 cancelButtonColor: '#6c757d'
-            }).then(result => {
+            }).then(async (result) => {
                 if (result.isConfirmed) {
-                    // Stokta ürün varsa miktarını artır, yoksa yeni ekle
-                    if (stokListesi[satis.barkod]) {
-                        const currentStock = stokListesi[satis.barkod].stok_miktari || stokListesi[satis.barkod].miktar || 0;
-                        stokListesi[satis.barkod].stok_miktari = currentStock + satis.miktar;
-                        stokListesi[satis.barkod].miktar = stokListesi[satis.barkod].stok_miktari;
-                    } else {
-                        stokListesi[satis.barkod] = {
-                            urun_adi: satis.urunAdi,
-                            ad: satis.urunAdi, // Backward compatibility
-                            marka: satis.marka || '',
-                            stok_miktari: satis.miktar,
-                            miktar: satis.miktar, // Backward compatibility
-                            alisFiyati: satis.alisFiyati || 0,
-                            eklenmeTarihi: new Date().toISOString()
-                        };
+                    try {
+                        console.log('🔄 İade işlemi başlatılıyor:', satisId);
+                        
+                        // API'ye iade isteği gönder
+                        const response = await fetch(`${API_BASE}/api/satis-iade`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                satisId: satisId,
+                                barkod: satis.barkod,
+                                miktar: satis.miktar,
+                                urunAdi: satis.urunAdi,
+                                alisFiyati: satis.alisFiyati || 0
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            // Local data'dan satışı sil
+                            satisGecmisi.splice(satisIndex, 1);
+                            
+                            // Stok güncellemesi varsa local data'yı güncelle
+                            if (result.stokGuncellemesi) {
+                                stokListesi[satis.barkod] = result.stokGuncellemesi;
+                            }
+                            
+                            // Real-time sync to other clients
+                            socket.emit('dataUpdate', {
+                                type: 'satis-iade',
+                                data: { satisId: satisId, barkod: satis.barkod },
+                                source: socket.id
+                            });
+                            
+                            stokTablosunuGuncelle();
+                            satisTablosunuGuncelle();
+                            guncellenenVerileriKaydet();
+                            
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'İade Tamamlandı!',
+                                text: result.message || 'Ürün stoklara geri eklendi.',
+                                showConfirmButton: false,
+                                timer: 1500
+                            });
+                        } else {
+                            throw new Error(result.message);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ İade hatası:', error);
+                        Swal.fire('Hata', error.message || 'İade işlemi başarısız', 'error');
                     }
-                    
-                    // Satışı geçmişten sil
-                    satisGecmisi.splice(satisIndex, 1);
-                    saveData();
-                    
-                    stokTablosunuGuncelle();
-                    satisTablosunuGuncelle();
-                    
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'İade Tamamlandı!',
-                        text: 'Ürün stoklara geri eklendi.',
-                        showConfirmButton: false,
-                        timer: 1500
-                    });
                 }
             });
         }
         
-        // Satış sil
-        function satisSil(satisId) {
+        // Satış sil (API ile entegre)
+        async function satisSil(satisId) {
             const satisIndex = satisGecmisi.findIndex(s => s.id === satisId);
             if (satisIndex === -1) return;
+            
+            const satis = satisGecmisi[satisIndex];
             
             Swal.fire({
                 title: 'Satışı silmek istiyor musunuz?',
@@ -3710,12 +3734,46 @@
                 cancelButtonColor: '#3085d6',
                 confirmButtonText: 'Evet, sil!',
                 cancelButtonText: 'İptal'
-            }).then((result) => {
+            }).then(async (result) => {
                 if (result.isConfirmed) {
-                    satisGecmisi.splice(satisIndex, 1);
-                    saveData();
-                    satisTablosunuGuncelle();
-                    Swal.fire('Silindi!', 'Satış başarıyla silindi.', 'success');
+                    try {
+                        console.log('🗑️ Satış siliniyor:', satisId);
+                        
+                        const response = await fetch(`${API_BASE}/api/satis-sil/${satisId}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            // Local data'dan sil
+                            satisGecmisi.splice(satisIndex, 1);
+                            
+                            // Real-time sync to other clients
+                            socket.emit('dataUpdate', {
+                                type: 'satis-delete',
+                                data: { satisId: satisId },
+                                source: socket.id
+                            });
+                            
+                            satisTablosunuGuncelle();
+                            guncellenenVerileriKaydet();
+                            
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Satış Silindi!',
+                                text: result.message,
+                                showConfirmButton: false,
+                                timer: 1500
+                            });
+                        } else {
+                            throw new Error(result.message);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ Satış silme hatası:', error);
+                        Swal.fire('Hata', error.message || 'Satış silinemedi', 'error');
+                    }
                 }
             });
         }
@@ -3781,6 +3839,8 @@
                 if (editingBarkod && stokListesi[editingBarkod]) {
                     // Güncelleme
                     console.log('🔄 Ürün güncelleniyor:', barkod);
+                    const editingUrun = stokListesi[editingBarkod];
+                    urunData.id = editingUrun.id; // ID'yi ekle
                     urunData.guncellemeTarihi = new Date().toISOString();
                     
                     response = await fetch(`${API_BASE}/api/stok-guncelle`, {
@@ -3962,8 +4022,10 @@
             document.getElementById('aciklama').value = '';
             document.getElementById('miktar').value = '0';
             document.getElementById('alisFiyati').value = '';
+            document.getElementById('satisFiyati').value = '';
+            document.getElementById('kategori').value = '';
             
-                                editingBarkod = null;
+            editingBarkod = null;
         }
         
         // Düşük stoklu ürünleri göster
@@ -5625,6 +5687,65 @@
             document.getElementById('musteriAciklama').value = musteri.aciklama || '';
             document.getElementById('musteriKaydetBtn').innerHTML = '<i class="fas fa-save"></i> Güncelle';
             document.getElementById('musteriIptalBtn').style.display = 'inline-block';
+        }
+
+        // Müşteri silme fonksiyonu (eksik olanı ekliyorum)
+        async function musteriSil(id) {
+            if (!musteriler[id]) return;
+            
+            const musteri = musteriler[id];
+            
+            Swal.fire({
+                title: 'Silmeyi onayla',
+                html: `<b>${musteri.ad || ''}</b> müşterisini silmek istediğinize emin misiniz?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Evet, Sil',
+                cancelButtonText: 'İptal',
+                confirmButtonColor: '#e74c3c',
+                cancelButtonColor: '#6c757d'
+            }).then(async (result) => {
+                if (result.isConfirmed) {
+                    try {
+                        console.log('🗑️ Müşteri siliniyor:', id);
+                        
+                        const response = await fetch(`${API_BASE}/api/musteri-sil/${encodeURIComponent(id)}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            // Local data dan sil
+                            delete musteriler[id];
+                            
+                            // Real-time sync to other clients
+                            socket.emit('dataUpdate', {
+                                type: 'musteri-delete',
+                                data: { id: id },
+                                source: socket.id
+                            });
+                            
+                            musteriTablosunuGuncelle();
+                            guncellenenVerileriKaydet();
+                            
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Müşteri Silindi!',
+                                text: result.message,
+                                showConfirmButton: false,
+                                timer: 1500
+                            });
+                        } else {
+                            throw new Error(result.message);
+                        }
+                        
+                    } catch (error) {
+                        console.error('❌ Müşteri silme hatası:', error);
+                        Swal.fire('Hata', error.message || 'Müşteri silinemedi', 'error');
+                    }
+                }
+            });
         }
 
         // Tema değiştirme fonksiyonu
