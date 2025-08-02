@@ -1440,6 +1440,41 @@ app.post('/api/bulk-update', async (req, res) => {
     }
 });
 
+// Reset database endpoint
+app.post('/api/reset-database', async (req, res) => {
+    try {
+        const transaction = db.transaction(() => {
+            // Clear all tables
+            db.prepare('DELETE FROM stok').run();
+            db.prepare('DELETE FROM musteriler').run();
+            db.prepare('DELETE FROM satisGecmisi').run();
+            
+            // Reset auto-increment counters
+            db.prepare("DELETE FROM sqlite_sequence WHERE name IN ('stok', 'satisGecmisi')").run();
+            
+            return {
+                stok: db.prepare('SELECT COUNT(*) as count FROM stok').get().count,
+                musteriler: db.prepare('SELECT COUNT(*) as count FROM musteriler').get().count,
+                satisGecmisi: db.prepare('SELECT COUNT(*) as count FROM satisGecmisi').get().count
+            };
+        });
+        
+        const counts = transaction();
+        
+        res.json({
+            success: true,
+            message: 'Tüm veriler başarıyla silindi',
+            counts: counts
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Test sayfası
 app.get('/test', (req, res) => {
     res.sendFile(path.join(__dirname, 'test.html'));
