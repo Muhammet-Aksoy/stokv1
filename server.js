@@ -88,6 +88,7 @@ function initializeDatabase() {
             CREATE TABLE IF NOT EXISTS satisGecmisi (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 barkod TEXT NOT NULL,
+                urunAdi TEXT,
                 miktar INTEGER DEFAULT 0,
                 fiyat REAL DEFAULT 0,
                 alisFiyati REAL DEFAULT 0,
@@ -147,6 +148,14 @@ function initializeDatabase() {
         } catch (e) {
             console.log('📦 Adding varyant_id column to stok table...');
             db.exec('ALTER TABLE stok ADD COLUMN varyant_id TEXT');
+        }
+        
+        // Add urunAdi column to satisGecmisi if it doesn't exist (migration for existing databases)
+        try {
+            db.prepare('SELECT urunAdi FROM satisGecmisi LIMIT 1').get();
+        } catch (e) {
+            console.log('📦 Adding urunAdi column to satisGecmisi table...');
+            db.exec('ALTER TABLE satisGecmisi ADD COLUMN urunAdi TEXT');
         }
         
         // Initialize database with sample data if empty
@@ -1179,6 +1188,16 @@ app.post('/api/satis-ekle', async (req, res) => {
         
         // Ensure proper data types and handle null/undefined values
         const barkod = satis.barkod || '';
+        
+        // Get product name from stock if available
+        let urunAdi = satis.urunAdi || '';
+        if (!urunAdi) {
+            // Load stock data to get product name
+            const stokRows = db.prepare('SELECT * FROM stok WHERE barkod = ?').all(barkod);
+            if (stokRows.length > 0) {
+                urunAdi = stokRows[0].ad;
+            }
+        }
         const miktar = parseInt(satis.miktar) || 0;
         const fiyat = parseFloat(satis.fiyat) || 0;
         const alisFiyati = parseFloat(satis.alisFiyati) || 0;
@@ -1188,9 +1207,9 @@ app.post('/api/satis-ekle', async (req, res) => {
         const toplam = parseFloat(satis.toplam) || (fiyat * miktar);
         
         const result = db.prepare(`
-            INSERT INTO satisGecmisi (barkod, miktar, fiyat, alisFiyati, musteriId, tarih, borc, toplam)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(barkod, miktar, fiyat, alisFiyati, musteriId, tarih, borc, toplam);
+            INSERT INTO satisGecmisi (barkod, urunAdi, miktar, fiyat, alisFiyati, musteriId, tarih, borc, toplam)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(barkod, urunAdi, miktar, fiyat, alisFiyati, musteriId, tarih, borc, toplam);
         
         // Real-time sync to all clients
         io.to('dataSync').emit('dataUpdated', {

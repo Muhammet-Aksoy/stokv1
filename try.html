@@ -3179,16 +3179,16 @@
                     }
                     
                     // Güncel ürün adını bul (eğer ürün hala mevcutsa)
-                    let currentProductName = satis.urunAdi; // Varsayılan olarak satış kaydındaki ad
-                    let barkodGoster = '-';
-                    // Barkodun gösterimi: stokta karşılığı varsa onun barkodunu göster, yoksa satış kaydındaki barkodu göster
-                    const productEntry = Object.entries(stokListesi).find(([id, urun]) => urun.barkod === satis.barkod);
-                    if (productEntry) {
-                        const [id, urun] = productEntry;
-                        barkodGoster = urun.barkod; // Only use actual barcode, not the ID
-                        currentProductName = urun.ad;
-                    } else if (satis.barkod && satis.barkod.length > 0) {
-                        barkodGoster = satis.barkod;
+                    let currentProductName = satis.urunAdi || 'Ürün Adı Yok'; // Varsayılan olarak satış kaydındaki ad
+                    let barkodGoster = satis.barkod || '-';
+                    
+                    // Eğer satış kaydında ürün adı yoksa, stoktan bulmaya çalış
+                    if (!satis.urunAdi || satis.urunAdi === '') {
+                        const productEntry = Object.entries(stokListesi).find(([id, urun]) => urun.barkod === satis.barkod);
+                        if (productEntry) {
+                            const [id, urun] = productEntry;
+                            currentProductName = urun.ad;
+                        }
                     }
                     
                     tr.innerHTML = `
@@ -3266,12 +3266,14 @@
                 if (satisGecmisi && satisGecmisi.length > 0) {
                     satisGecmisi.forEach(satis => {
                         if (satis.musteriId === id) {
-                            // Get current product name from stock if available
-                            let currentProductName = satis.urunAdi; // Default to original name
-                            const productEntry = Object.entries(stokListesi).find(([productId, urun]) => urun.barkod === satis.barkod);
-                            if (productEntry) {
-                                const [productId, urun] = productEntry;
-                                currentProductName = urun.ad;
+                            // Get current product name from sales record or stock
+                            let currentProductName = satis.urunAdi || 'Ürün Adı Yok';
+                            if (!satis.urunAdi || satis.urunAdi === '') {
+                                const productEntry = Object.entries(stokListesi).find(([productId, urun]) => urun.barkod === satis.barkod);
+                                if (productEntry) {
+                                    const [productId, urun] = productEntry;
+                                    currentProductName = urun.ad;
+                                }
                             }
                             satinAlinanUrunler.push(`${currentProductName} (${satis.miktar} adet)`);
                         }
