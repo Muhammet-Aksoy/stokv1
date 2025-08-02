@@ -359,45 +359,95 @@ app.get('/api/test', (req, res) => {
 // GET endpoint for all data
 app.get('/api/tum-veriler', async (req, res) => {
     try {
+        console.log('📡 GET /api/tum-veriler - Data request received');
+        
         const data = db.transaction(() => {
             let stokListesi = {};
             let satisGecmisi = [];
             let musteriler = {};
             let borclarim = {};
             
-            // Get all data - Index by barkod for simpler identification
-            const stokRows = db.prepare('SELECT * FROM stok ORDER BY updated_at DESC').all();
-            stokRows.forEach(row => { 
-                // Use barkod as the key for simpler access
-                const key = row.barkod;
-                stokListesi[key] = row; 
-            });
-            
-            satisGecmisi = db.prepare('SELECT * FROM satisGecmisi ORDER BY tarih DESC').all();
-            
-            const musteriRows = db.prepare('SELECT * FROM musteriler ORDER BY updated_at DESC').all();
-            musteriRows.forEach(row => { musteriler[row.id] = row; });
-            
-            const borcRows = db.prepare('SELECT * FROM borclarim ORDER BY tarih DESC').all();
-            borcRows.forEach(row => { borclarim[row.id] = row; });
+            try {
+                // Get all stok data with proper error handling
+                const stokRows = db.prepare('SELECT * FROM stok ORDER BY updated_at DESC, id DESC').all();
+                console.log(`📦 Found ${stokRows.length} products in database`);
+                
+                // Index by barkod for consistent access
+                stokRows.forEach(row => { 
+                    const key = row.barkod;
+                    if (key) {
+                        stokListesi[key] = row; 
+                    } else {
+                        console.warn('⚠️ Product without barcode found:', row);
+                    }
+                });
+                
+                // Get sales history with proper error handling
+                satisGecmisi = db.prepare('SELECT * FROM satisGecmisi ORDER BY tarih DESC, id DESC').all();
+                console.log(`💰 Found ${satisGecmisi.length} sales records`);
+                
+                // Get customers with proper error handling
+                const musteriRows = db.prepare('SELECT * FROM musteriler ORDER BY updated_at DESC, id DESC').all();
+                console.log(`👥 Found ${musteriRows.length} customers`);
+                musteriRows.forEach(row => { 
+                    if (row.id) {
+                        musteriler[row.id] = row; 
+                    } else {
+                        console.warn('⚠️ Customer without ID found:', row);
+                    }
+                });
+                
+                // Get debts with proper error handling
+                const borcRows = db.prepare('SELECT * FROM borclarim ORDER BY tarih DESC, id DESC').all();
+                console.log(`💳 Found ${borcRows.length} debt records`);
+                borcRows.forEach(row => { 
+                    if (row.id) {
+                        borclarim[row.id] = row; 
+                    } else {
+                        console.warn('⚠️ Debt record without ID found:', row);
+                    }
+                });
+                
+            } catch (dbError) {
+                console.error('❌ Database query error:', dbError);
+                throw new Error(`Database query failed: ${dbError.message}`);
+            }
             
             return { stokListesi, satisGecmisi, musteriler, borclarim };
         })();
+        
+        // Validate data integrity
+        const stokCount = Object.keys(data.stokListesi).length;
+        const satisCount = data.satisGecmisi.length;
+        const musteriCount = Object.keys(data.musteriler).length;
+        const borcCount = Object.keys(data.borclarim).length;
+        
+        console.log('📊 Data summary:', {
+            stok: stokCount,
+            satis: satisCount,
+            musteri: musteriCount,
+            borc: borcCount
+        });
+        
+        // Ensure we have valid data structure
+        if (stokCount === 0 && satisCount === 0 && musteriCount === 0) {
+            console.warn('⚠️ No data found in database - this might indicate an issue');
+        }
         
         res.json({
             success: true,
             data: data,
             timestamp: new Date().toISOString(),
             count: {
-                stok: Object.keys(data.stokListesi).length,
-                satis: data.satisGecmisi.length,
-                musteri: Object.keys(data.musteriler).length,
-                borc: Object.keys(data.borclarim).length
+                stok: stokCount,
+                satis: satisCount,
+                musteri: musteriCount,
+                borc: borcCount
             }
         });
         
     } catch (error) {
-        console.error('❌ Tum veriler error:', error);
+        console.error('❌ Tum veriler GET error:', error);
         res.status(500).json({
             success: false,
             error: error.message,
@@ -419,11 +469,21 @@ app.post('/api/tum-veriler', async (req, res) => {
             });
         }
         
+        console.log('📡 POST /api/tum-veriler - Bulk sync started');
+        console.log('📊 Import data summary:', {
+            stok: Object.keys(stokListesi).length,
+            satis: satisGecmisi.length,
+            musteri: Object.keys(musteriler).length,
+            borc: Object.keys(borclarim).length
+        });
+        
         const result = db.transaction(() => {
             let updatedCount = 0;
             let insertedCount = 0;
+            let skippedCount = 0;
+            let errorCount = 0;
             
-            // Sync stok data
+            // Sync stok data with improved deduplication
             for (const [key, urun] of Object.entries(stokListesi)) {
                 try {
                     // Handle both old structure (product ID as key) and new structure (barcode as key)
@@ -431,26 +491,48 @@ app.post('/api/tum-veriler', async (req, res) => {
                     const marka = urun.marka || '';
                     const varyant_id = urun.varyant_id || '';
                     
+                    if (!barkod) {
+                        console.warn('⚠️ Skipping product without barcode:', urun);
+                        skippedCount++;
+                        continue;
+                    }
+                    
                     // Check for existing record using the composite unique constraint
                     const existing = db.prepare('SELECT id FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
                     
                     if (existing) {
-                        // Ensure proper data types and handle null/undefined values
-                        const ad = urun.ad || '';
-                        const miktar = parseInt(urun.miktar) || 0;
-                        const alisFiyati = parseFloat(urun.alisFiyati) || 0;
-                        const satisFiyati = parseFloat(urun.satisFiyati) || 0;
-                        const kategori = urun.kategori || '';
-                        const aciklama = urun.aciklama || '';
+                        // Update existing record only if data is different
+                        const currentData = db.prepare('SELECT * FROM stok WHERE id = ?').get(existing.id);
+                        const hasChanges = (
+                            currentData.ad !== (urun.ad || '') ||
+                            currentData.miktar !== (parseInt(urun.miktar) || 0) ||
+                            currentData.alisFiyati !== (parseFloat(urun.alisFiyati) || 0) ||
+                            currentData.satisFiyati !== (parseFloat(urun.satisFiyati) || 0) ||
+                            currentData.kategori !== (urun.kategori || '') ||
+                            currentData.aciklama !== (urun.aciklama || '')
+                        );
                         
-                        db.prepare(`
-                            UPDATE stok SET 
-                                ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                                kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE barkod = ? AND marka = ? AND varyant_id = ?
-                        `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
-                        updatedCount++;
+                        if (hasChanges) {
+                            // Ensure proper data types and handle null/undefined values
+                            const ad = urun.ad || '';
+                            const miktar = parseInt(urun.miktar) || 0;
+                            const alisFiyati = parseFloat(urun.alisFiyati) || 0;
+                            const satisFiyati = parseFloat(urun.satisFiyati) || 0;
+                            const kategori = urun.kategori || '';
+                            const aciklama = urun.aciklama || '';
+                            
+                            db.prepare(`
+                                UPDATE stok SET 
+                                    ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
+                                    kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP
+                                WHERE barkod = ? AND marka = ? AND varyant_id = ?
+                            `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
+                            updatedCount++;
+                        } else {
+                            skippedCount++; // No changes needed
+                        }
                     } else {
+                        // Insert new record
                         // Ensure proper data types and handle null/undefined values
                         const ad = urun.ad || '';
                         const miktar = parseInt(urun.miktar) || 0;
@@ -467,13 +549,24 @@ app.post('/api/tum-veriler', async (req, res) => {
                     }
                 } catch (e) {
                     console.warn(`⚠️ Stok sync error for ${key}:`, e.message);
+                    errorCount++;
                 }
             }
             
-            // Sync satis data
+            // Sync satis data with improved deduplication
             for (const satis of satisGecmisi) {
                 try {
-                    const existing = db.prepare('SELECT id FROM satisGecmisi WHERE id = ?').get(satis.id);
+                    if (!satis.barkod || !satis.miktar) {
+                        console.warn('⚠️ Skipping invalid sales record:', satis);
+                        skippedCount++;
+                        continue;
+                    }
+                    
+                    // Use composite key for sales deduplication (barkod + tarih + miktar + fiyat)
+                    const existing = db.prepare(`
+                        SELECT id FROM satisGecmisi 
+                        WHERE barkod = ? AND tarih = ? AND miktar = ? AND fiyat = ?
+                    `).get(satis.barkod, satis.tarih, satis.miktar, satis.fiyat);
                     
                     if (!existing) {
                         // Ensure proper data types and handle null/undefined values
@@ -491,31 +584,54 @@ app.post('/api/tum-veriler', async (req, res) => {
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         `).run(barkod, miktar, fiyat, alisFiyati, musteriId, tarih, borc, toplam);
                         insertedCount++;
+                    } else {
+                        skippedCount++; // Duplicate sales record
                     }
                 } catch (e) {
                     console.warn(`⚠️ Satis sync error for ${satis.id}:`, e.message);
+                    errorCount++;
                 }
             }
             
-            // Sync musteriler data
+            // Sync musteriler data with improved deduplication
             for (const [id, musteri] of Object.entries(musteriler)) {
                 try {
+                    if (!id || !musteri.ad) {
+                        console.warn('⚠️ Skipping invalid customer record:', musteri);
+                        skippedCount++;
+                        continue;
+                    }
+                    
                     const existing = db.prepare('SELECT id FROM musteriler WHERE id = ?').get(id);
                     
                     if (existing) {
-                        // Ensure proper data types and handle null/undefined values
-                        const ad = musteri.ad || '';
-                        const telefon = musteri.telefon || '';
-                        const adres = musteri.adres || '';
-                        const bakiye = parseFloat(musteri.bakiye) || 0;
+                        // Update only if data is different
+                        const currentData = db.prepare('SELECT * FROM musteriler WHERE id = ?').get(id);
+                        const hasChanges = (
+                            currentData.ad !== (musteri.ad || '') ||
+                            currentData.telefon !== (musteri.telefon || '') ||
+                            currentData.adres !== (musteri.adres || '') ||
+                            currentData.bakiye !== (parseFloat(musteri.bakiye) || 0)
+                        );
                         
-                        db.prepare(`
-                            UPDATE musteriler SET 
-                                ad = ?, telefon = ?, adres = ?, bakiye = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE id = ?
-                        `).run(ad, telefon, adres, bakiye, id);
-                        updatedCount++;
+                        if (hasChanges) {
+                            // Ensure proper data types and handle null/undefined values
+                            const ad = musteri.ad || '';
+                            const telefon = musteri.telefon || '';
+                            const adres = musteri.adres || '';
+                            const bakiye = parseFloat(musteri.bakiye) || 0;
+                            
+                            db.prepare(`
+                                UPDATE musteriler SET 
+                                    ad = ?, telefon = ?, adres = ?, bakiye = ?, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                            `).run(ad, telefon, adres, bakiye, id);
+                            updatedCount++;
+                        } else {
+                            skippedCount++; // No changes needed
+                        }
                     } else {
+                        // Insert new customer
                         // Ensure proper data types and handle null/undefined values
                         const ad = musteri.ad || '';
                         const telefon = musteri.telefon || '';
@@ -530,28 +646,49 @@ app.post('/api/tum-veriler', async (req, res) => {
                     }
                 } catch (e) {
                     console.warn(`⚠️ Musteri sync error for ${id}:`, e.message);
+                    errorCount++;
                 }
             }
             
-            // Sync borclarim data
+            // Sync borclarim data with improved deduplication
             for (const [id, borc] of Object.entries(borclarim)) {
                 try {
+                    if (!id || !borc.musteriId) {
+                        console.warn('⚠️ Skipping invalid debt record:', borc);
+                        skippedCount++;
+                        continue;
+                    }
+                    
                     const existing = db.prepare('SELECT id FROM borclarim WHERE id = ?').get(id);
                     
                     if (existing) {
-                        // Ensure proper data types and handle null/undefined values
-                        const musteriId = borc.musteriId || '';
-                        const tutar = parseFloat(borc.tutar) || 0;
-                        const aciklama = borc.aciklama || '';
-                        const tarih = borc.tarih || new Date().toISOString();
+                        // Update only if data is different
+                        const currentData = db.prepare('SELECT * FROM borclarim WHERE id = ?').get(id);
+                        const hasChanges = (
+                            currentData.musteriId !== (borc.musteriId || '') ||
+                            currentData.tutar !== (parseFloat(borc.tutar) || 0) ||
+                            currentData.aciklama !== (borc.aciklama || '') ||
+                            currentData.tarih !== (borc.tarih || new Date().toISOString())
+                        );
                         
-                        db.prepare(`
-                            UPDATE borclarim SET 
-                                musteriId = ?, tutar = ?, aciklama = ?, tarih = ?
-                            WHERE id = ?
-                        `).run(musteriId, tutar, aciklama, tarih, id);
-                        updatedCount++;
+                        if (hasChanges) {
+                            // Ensure proper data types and handle null/undefined values
+                            const musteriId = borc.musteriId || '';
+                            const tutar = parseFloat(borc.tutar) || 0;
+                            const aciklama = borc.aciklama || '';
+                            const tarih = borc.tarih || new Date().toISOString();
+                            
+                            db.prepare(`
+                                UPDATE borclarim SET 
+                                    musteriId = ?, tutar = ?, aciklama = ?, tarih = ?
+                                WHERE id = ?
+                            `).run(musteriId, tutar, aciklama, tarih, id);
+                            updatedCount++;
+                        } else {
+                            skippedCount++; // No changes needed
+                        }
                     } else {
+                        // Insert new debt record
                         // Ensure proper data types and handle null/undefined values
                         const musteriId = borc.musteriId || '';
                         const tutar = parseFloat(borc.tutar) || 0;
@@ -566,11 +703,14 @@ app.post('/api/tum-veriler', async (req, res) => {
                     }
                 } catch (e) {
                     console.warn(`⚠️ Borc sync error for ${id}:`, e.message);
+                    errorCount++;
                 }
             }
             
-            return { updatedCount, insertedCount };
+            return { updatedCount, insertedCount, skippedCount, errorCount };
         })();
+        
+        console.log('📊 Sync result:', result);
         
         res.json({
             success: true,
@@ -787,36 +927,69 @@ app.post('/api/stok-ekle', async (req, res) => {
         const aciklama = urun.aciklama || '';
         const varyant_id = urun.varyant_id || '';
         
-        // Check if same barkod and marka combination exists
-        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
+        // Check if same barkod exists (regardless of marka/variant)
+        const existingProducts = db.prepare('SELECT * FROM stok WHERE barkod = ?').all(barkod);
         
-        if (existingProduct) {
-            // Update existing product
-            const result = db.prepare(`
-                UPDATE stok SET 
-                    ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                    kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE barkod = ? AND marka = ? AND varyant_id = ?
-            `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
+        if (existingProducts.length > 0) {
+            // Check if exact same combination exists
+            const exactMatch = existingProducts.find(p => 
+                p.marka === marka && p.varyant_id === varyant_id
+            );
             
-            const updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
-            
-            // Real-time sync to all clients
-            io.to('dataSync').emit('dataUpdated', {
-                type: 'stok-update',
-                data: updatedProduct,
-                timestamp: new Date().toISOString()
-            });
-            
-            res.json({ 
-                success: true, 
-                message: 'Mevcut ürün güncellendi', 
-                data: updatedProduct,
-                isUpdate: true,
-                timestamp: new Date().toISOString()
-            });
+            if (exactMatch) {
+                // Update existing product with same barkod+marka+variant
+                const result = db.prepare(`
+                    UPDATE stok SET 
+                        ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
+                        kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP 
+                    WHERE barkod = ? AND marka = ? AND varyant_id = ?
+                `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
+                
+                const updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
+                
+                // Real-time sync to all clients
+                io.to('dataSync').emit('dataUpdated', {
+                    type: 'stok-update',
+                    data: updatedProduct,
+                    timestamp: new Date().toISOString()
+                });
+                
+                res.json({ 
+                    success: true, 
+                    message: 'Mevcut ürün güncellendi', 
+                    data: updatedProduct,
+                    isUpdate: true,
+                    existingVariants: existingProducts.length,
+                    timestamp: new Date().toISOString()
+                });
+            } else {
+                // Same barcode but different brand/variant - add as new variant
+                const result = db.prepare(`
+                    INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                `).run(barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id);
+                
+                // Get the inserted product with its ID
+                const insertedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
+                
+                // Real-time sync to all clients
+                io.to('dataSync').emit('dataUpdated', {
+                    type: 'stok-add',
+                    data: insertedProduct,
+                    timestamp: new Date().toISOString()
+                });
+                
+                res.status(201).json({ 
+                    success: true, 
+                    message: `Aynı barkodlu yeni varyant eklendi (${existingProducts.length + 1} varyant)`, 
+                    data: insertedProduct,
+                    isUpdate: false,
+                    existingVariants: existingProducts.length,
+                    timestamp: new Date().toISOString()
+                });
+            }
         } else {
-            // Insert new product
+            // Insert new product (no existing barcode)
             const result = db.prepare(`
                 INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -837,6 +1010,7 @@ app.post('/api/stok-ekle', async (req, res) => {
                 message: 'Yeni ürün başarıyla eklendi', 
                 data: insertedProduct,
                 isUpdate: false,
+                existingVariants: 0,
                 timestamp: new Date().toISOString()
             });
         }
