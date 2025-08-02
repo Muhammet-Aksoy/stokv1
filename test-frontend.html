@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satış Fiyatı Sütunu Testi</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .info { background-color: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .price-column {
+            background-color: #e8f5e8;
+            font-weight: bold;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Satış Fiyatı Sütunu Frontend Testi</h1>
+    
+    <div class="container">
+        <h2>📊 Stok Listesi Kontrolü</h2>
+        <div id="status" class="status info">Yükleniyor...</div>
+        
+        <button onclick="loadStockData()">Stok Verilerini Yükle</button>
+        <button onclick="checkTableStructure()">Tablo Yapısını Kontrol Et</button>
+    </div>
+    
+    <div class="container">
+        <h2>📋 Stok Listesi</h2>
+        <div id="stockTable"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        let stockData = null;
+        let socket = null;
+
+        // Socket bağlantısını kur
+        function connectSocket() {
+            socket = io();
+            
+            socket.on('connect', () => {
+                console.log('✅ Socket bağlantısı kuruldu');
+                document.getElementById('status').className = 'status success';
+                document.getElementById('status').textContent = '✅ Sunucuya bağlandı';
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('❌ Socket bağlantısı kesildi');
+                document.getElementById('status').className = 'status error';
+                document.getElementById('status').textContent = '❌ Sunucu bağlantısı kesildi';
+            });
+        }
+
+        // Stok verilerini yükle
+        async function loadStockData() {
+            try {
+                document.getElementById('status').className = 'status info';
+                document.getElementById('status').textContent = '📡 Veriler yükleniyor...';
+                
+                const response = await fetch('/api/tum-veriler');
+                const data = await response.json();
+                
+                if (data.success) {
+                    stockData = data.data;
+                    document.getElementById('status').className = 'status success';
+                    document.getElementById('status').textContent = `✅ ${Object.keys(stockData.stokListesi).length} ürün yüklendi`;
+                    
+                    displayStockTable();
+                } else {
+                    throw new Error(data.error || 'Veri yükleme hatası');
+                }
+            } catch (error) {
+                document.getElementById('status').className = 'status error';
+                document.getElementById('status').textContent = `❌ Hata: ${error.message}`;
+                console.error('Veri yükleme hatası:', error);
+            }
+        }
+
+        // Stok tablosunu göster
+        function displayStockTable() {
+            if (!stockData || !stockData.stokListesi) {
+                document.getElementById('stockTable').innerHTML = '<p>❌ Stok verisi bulunamadı</p>';
+                return;
+            }
+
+            const tableDiv = document.getElementById('stockTable');
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Barkod</th>
+                            <th>Ürün Adı</th>
+                            <th>Marka</th>
+                            <th>Miktar</th>
+                            <th class="price-column">Alış Fiyatı (₺)</th>
+                            <th class="price-column">Satış Fiyatı (₺)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            const products = Object.entries(stockData.stokListesi);
+            
+            if (products.length === 0) {
+                html += '<tr><td colspan="6" style="text-align: center;">Ürün bulunamadı</td></tr>';
+            } else {
+                products.forEach(([key, product]) => {
+                    html += `
+                        <tr>
+                            <td>${product.barkod || '-'}</td>
+                            <td>${product.urun_adi || product.ad || '-'}</td>
+                            <td>${product.marka || '-'}</td>
+                            <td>${product.stok_miktari || product.miktar || 0}</td>
+                            <td class="price-column">${product.alisFiyati ? product.alisFiyati.toFixed(2) : '-'}</td>
+                            <td class="price-column">${product.satisFiyati ? product.satisFiyati.toFixed(2) : '-'}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            html += '</tbody></table>';
+            tableDiv.innerHTML = html;
+        }
+
+        // Tablo yapısını kontrol et
+        function checkTableStructure() {
+            if (!stockData || !stockData.stokListesi) {
+                alert('Önce stok verilerini yükleyin!');
+                return;
+            }
+
+            const products = Object.values(stockData.stokListesi);
+            const hasSalePrice = products.some(p => p.satisFiyati !== undefined && p.satisFiyati !== null);
+            const hasPurchasePrice = products.some(p => p.alisFiyati !== undefined && p.alisFiyati !== null);
+            
+            let message = '📊 Tablo Yapısı Kontrolü:\n\n';
+            message += `✅ Alış Fiyatı alanı: ${hasPurchasePrice ? 'Mevcut' : 'Eksik'}\n`;
+            message += `✅ Satış Fiyatı alanı: ${hasSalePrice ? 'Mevcut' : 'Eksik'}\n`;
+            message += `📋 Toplam ürün sayısı: ${products.length}\n`;
+            
+            if (hasSalePrice) {
+                const productsWithSalePrice = products.filter(p => p.satisFiyati > 0).length;
+                message += `💰 Satış fiyatı olan ürün sayısı: ${productsWithSalePrice}\n`;
+            }
+            
+            alert(message);
+        }
+
+        // Sayfa yüklendiğinde socket bağlantısını kur
+        window.onload = function() {
+            connectSocket();
+        };
+    </script>
+</body>
+</html>

@@ -1719,6 +1719,7 @@
                                     <th data-sort="marka">Marka</th>
                                     <th data-sort="miktar">Miktar</th>
                                     <th data-sort="alisFiyati">Alış Fiyatı (₺)</th>
+                                    <th data-sort="satisFiyati">Satış Fiyatı (₺)</th>
                                     <th>İşlemler</th>
                                 </tr>
                             </thead>
@@ -2954,7 +2955,7 @@
                     if (valueB === null || valueB === undefined) valueB = '';
                     
                     // Sayısal sıralama için dönüşüm
-                    if (currentSort.column === 'miktar' || currentSort.column === 'alisFiyati') {
+                    if (currentSort.column === 'miktar' || currentSort.column === 'alisFiyati' || currentSort.column === 'satisFiyati') {
                         valueA = parseFloat(valueA) || 0;
                         valueB = parseFloat(valueB) || 0;
                     } else if (typeof valueA === 'string') {
@@ -3003,6 +3004,7 @@
                     <td>${urun.marka || '-'}</td>
                     <td>${urun.stok_miktari || urun.miktar || 0}${(urun.stok_miktari || urun.miktar || 0) === 0 ? ' <span class="stock-zero-badge">STOK BİTTİ</span>' : ''}</td>
                     <td>${urun.alisFiyati ? urun.alisFiyati.toFixed(2) : '-'}</td>
+                    <td>${urun.satisFiyati ? urun.satisFiyati.toFixed(2) : '-'}</td>
                     <td>
                         <div class="action-buttons">
                             <button class="action-btn btn-sell" title="Sat" onclick="urunSat('${key}')" ${(urun.stok_miktari || urun.miktar || 0) === 0 ? 'disabled style="opacity:0.5;"' : ''}>
@@ -3047,6 +3049,7 @@
                             <p><strong>Marka:</strong> ${urun.marka || '-'}</p>
                             <p><strong>Stok:</strong> ${urun.stok_miktari || urun.miktar || 0}${(urun.stok_miktari || urun.miktar || 0) === 0 ? ' <span class="stock-zero-badge">STOK BİTTİ</span>' : ''}</p>
                             <p><strong>Alış Fiyatı:</strong> ${urun.alisFiyati ? urun.alisFiyati.toFixed(2) : '-'} ₺</p>
+                            <p><strong>Satış Fiyatı:</strong> ${urun.satisFiyati ? urun.satisFiyati.toFixed(2) : '-'} ₺</p>
                         </div>
                     </div>
                     <div class="product-footer">

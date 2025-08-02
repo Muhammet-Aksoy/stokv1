@@ -227,6 +227,7 @@ io.on('connection', (socket) => {
                                 marka: row.marka || '',
                                 kategori: row.kategori || '',
                                 fiyat: row.satisFiyati || 0, // Map 'satisFiyati' to 'fiyat'
+                                satisFiyati: row.satisFiyati || 0, // Keep original sale price field
                                 stok_miktari: row.miktar || 0, // Map 'miktar' to 'stok_miktari'
                                 min_stok: 0, // Default value since this column doesn't exist in DB
                                 alisFiyati: row.alisFiyati || 0, // Keep original purchase price
@@ -422,6 +423,7 @@ app.get('/api/tum-veriler', async (req, res) => {
                             marka: row.marka || '',
                             kategori: row.kategori || '',
                             fiyat: row.satisFiyati || 0, // Map 'satisFiyati' to 'fiyat'
+                            satisFiyati: row.satisFiyati || 0, // Keep original sale price field
                             stok_miktari: row.miktar || 0, // Map 'miktar' to 'stok_miktari'
                             min_stok: 0, // Default value since this column doesn't exist in DB
                             alisFiyati: row.alisFiyati || 0, // Keep original purchase price
