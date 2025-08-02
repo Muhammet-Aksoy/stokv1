@@ -1317,6 +1317,160 @@ app.post('/api/backup-email', async (req, res) => {
     }
 });
 
+// DELETE /api/musteri-sil/:id - Müşteri sil
+app.delete('/api/musteri-sil/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('🗑️ Müşteri siliniyor:', id);
+        
+        const result = db.prepare('DELETE FROM musteriler WHERE id = ?').run(id);
+        
+        if (result.changes > 0) {
+            // Real-time sync to all clients
+            io.to('dataSync').emit('dataUpdated', {
+                type: 'musteri-delete',
+                data: { id },
+                timestamp: new Date().toISOString()
+            });
+            
+            res.json({ 
+                success: true, 
+                message: 'Müşteri başarıyla silindi',
+                timestamp: new Date().toISOString()
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                message: 'Müşteri bulunamadı',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Müşteri silinirken hata:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Müşteri silinirken hata', 
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// DELETE /api/satis-sil/:id - Satış sil
+app.delete('/api/satis-sil/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('🗑️ Satış siliniyor:', id);
+        
+        const result = db.prepare('DELETE FROM satisGecmisi WHERE id = ?').run(id);
+        
+        if (result.changes > 0) {
+            // Real-time sync to all clients
+            io.to('dataSync').emit('dataUpdated', {
+                type: 'satis-delete',
+                data: { satisId: id },
+                timestamp: new Date().toISOString()
+            });
+            
+            res.json({ 
+                success: true, 
+                message: 'Satış başarıyla silindi',
+                timestamp: new Date().toISOString()
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                message: 'Satış bulunamadı',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+    } catch (error) {
+        console.error('❌ Satış silinirken hata:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Satış silinirken hata', 
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// POST /api/satis-iade - Satış iade
+app.post('/api/satis-iade', async (req, res) => {
+    try {
+        const { satisId, barkod, miktar, urunAdi, alisFiyati } = req.body;
+        console.log('🔄 İade işlemi başlatılıyor:', satisId);
+        
+        // Validate required fields
+        if (!satisId || !barkod || !miktar) {
+            return res.status(400).json({
+                success: false,
+                message: 'Satış ID, barkod ve miktar zorunludur',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Satışı veritabanından sil
+        const deleteResult = db.prepare('DELETE FROM satisGecmisi WHERE id = ?').run(satisId);
+        
+        if (deleteResult.changes === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Satış bulunamadı',
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Stok güncellemesi
+        let stokGuncellemesi = null;
+        const existingStock = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
+        
+        if (existingStock) {
+            // Mevcut stok miktarını artır
+            const newAmount = existingStock.miktar + miktar;
+            db.prepare('UPDATE stok SET miktar = ?, updated_at = CURRENT_TIMESTAMP WHERE barkod = ?').run(newAmount, barkod);
+            
+            // Güncellenmiş stok bilgisini al
+            stokGuncellemesi = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
+        } else {
+            // Yeni ürün olarak ekle
+            const insertResult = db.prepare(`
+                INSERT INTO stok (barkod, ad, miktar, alisFiyati, created_at, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            `).run(barkod, urunAdi, miktar, alisFiyati || 0);
+            
+            if (insertResult.changes > 0) {
+                stokGuncellemesi = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
+            }
+        }
+        
+        // Real-time sync to all clients
+        io.to('dataSync').emit('dataUpdated', {
+            type: 'satis-iade',
+            data: { satisId, barkod, stokGuncellemesi },
+            timestamp: new Date().toISOString()
+        });
+        
+        res.json({ 
+            success: true, 
+            message: 'İade başarıyla tamamlandı',
+            stokGuncellemesi,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ İade işlemi hatası:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'İade işlemi başarısız', 
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({
