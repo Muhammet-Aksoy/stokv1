@@ -428,8 +428,11 @@ app.post('/api/tum-veriler', async (req, res) => {
                 try {
                     // Handle both old structure (product ID as key) and new structure (barcode as key)
                     const barkod = urun.barkod || key;
+                    const marka = urun.marka || '';
+                    const varyant_id = urun.varyant_id || '';
                     
-                    const existing = db.prepare('SELECT id FROM stok WHERE barkod = ?').get(barkod);
+                    // Check for existing record using the composite unique constraint
+                    const existing = db.prepare('SELECT id FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
                     
                     if (existing) {
                         // Ensure proper data types and handle null/undefined values
@@ -439,15 +442,13 @@ app.post('/api/tum-veriler', async (req, res) => {
                         const satisFiyati = parseFloat(urun.satisFiyati) || 0;
                         const kategori = urun.kategori || '';
                         const aciklama = urun.aciklama || '';
-                        const marka = urun.marka || '';
-                        const varyant_id = urun.varyant_id || '';
                         
                         db.prepare(`
                             UPDATE stok SET 
                                 ad = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                                kategori = ?, aciklama = ?, marka = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP
-                            WHERE barkod = ?
-                        `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, marka, varyant_id, barkod);
+                                kategori = ?, aciklama = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE barkod = ? AND marka = ? AND varyant_id = ?
+                        `).run(ad, miktar, alisFiyati, satisFiyati, kategori, aciklama, barkod, marka, varyant_id);
                         updatedCount++;
                     } else {
                         // Ensure proper data types and handle null/undefined values
@@ -457,8 +458,6 @@ app.post('/api/tum-veriler', async (req, res) => {
                         const satisFiyati = parseFloat(urun.satisFiyati) || 0;
                         const kategori = urun.kategori || '';
                         const aciklama = urun.aciklama || '';
-                        const marka = urun.marka || '';
-                        const varyant_id = urun.varyant_id || '';
                         
                         db.prepare(`
                             INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id)
@@ -1326,8 +1325,8 @@ app.post('/urunler', async (req, res) => {
             
             // Insert new stock data
             const insertStok = db.prepare(`
-                INSERT INTO stok (barkod, ad, miktar, alisFiyati, satisFiyati, kategori, aciklama) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO stok (barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             `);
             
             let insertedCount = 0;
@@ -1340,11 +1339,13 @@ app.post('/urunler', async (req, res) => {
                     insertStok.run(
                         barkod,
                         urun.ad || '',
+                        urun.marka || '',
                         parseInt(urun.miktar) || 0,
                         parseFloat(urun.alisFiyati) || 0,
                         parseFloat(urun.satisFiyati) || 0,
                         urun.kategori || '',
-                        urun.aciklama || ''
+                        urun.aciklama || '',
+                        urun.varyant_id || ''
                     );
                     insertedCount++;
                 } catch (e) {
