@@ -2298,9 +2298,20 @@
                     
                 case 'stok-delete':
                     if (data.data) {
-                        // Barkod ile sil
+                        // Barkod ile sil - tüm olası key'leri kontrol et
                         if (data.data.barkod) {
-                            delete stokListesi[data.data.barkod];
+                            // Önce barkod ile direkt eşleşen key'i ara
+                            const keyToDelete = Object.keys(stokListesi).find(key => {
+                                const product = stokListesi[key];
+                                return product && product.barkod === data.data.barkod;
+                            });
+                            
+                            if (keyToDelete) {
+                                delete stokListesi[keyToDelete];
+                                console.log('🗑️ Product deleted by key:', keyToDelete);
+                            } else {
+                                console.warn('⚠️ Product not found for deletion:', data.data.barkod);
+                            }
                         }
                         guncellenenVerileriKaydet();
                         stokTablosunuGuncelle();
@@ -2310,6 +2321,15 @@
                     
                 case 'satis-add':
                     if (data.data) {
+                        // Ensure urunAdi is properly set
+                        if (!data.data.urunAdi && data.data.barkod) {
+                            // Try to get product name from stock
+                            const productEntry = Object.entries(stokListesi).find(([key, urun]) => urun.barkod === data.data.barkod);
+                            if (productEntry) {
+                                const [key, urun] = productEntry;
+                                data.data.urunAdi = urun.urun_adi || urun.ad || 'Ürün Adı Yok';
+                            }
+                        }
                         satisGecmisi.push(data.data);
                         guncellenenVerileriKaydet();
                         satisTablosunuGuncelle();
@@ -3187,7 +3207,7 @@
                         const productEntry = Object.entries(stokListesi).find(([id, urun]) => urun.barkod === satis.barkod);
                         if (productEntry) {
                             const [id, urun] = productEntry;
-                            currentProductName = urun.ad;
+                            currentProductName = urun.urun_adi || urun.ad || 'Ürün Adı Yok';
                         }
                     }
                     
@@ -3272,7 +3292,7 @@
                                 const productEntry = Object.entries(stokListesi).find(([productId, urun]) => urun.barkod === satis.barkod);
                                 if (productEntry) {
                                     const [productId, urun] = productEntry;
-                                    currentProductName = urun.ad;
+                                    currentProductName = urun.urun_adi || urun.ad || 'Ürün Adı Yok';
                                 }
                             }
                             satinAlinanUrunler.push(`${currentProductName} (${satis.miktar} adet)`);
@@ -3908,7 +3928,8 @@
                             // Real-time sync to other clients
                             socket.emit('dataUpdate', {
                                 type: 'stok-delete',
-                                data: { barkod: urun.barkod }
+                                data: { barkod: urun.barkod },
+                                source: socket.id
                             });
                             
                             stokTablosunuGuncelle();
