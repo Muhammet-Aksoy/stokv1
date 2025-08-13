@@ -1664,6 +1664,14 @@
                             <label for="alisFiyati"><i class="fas fa-money-bill-wave"></i> Alış Fiyatı (₺)</label>
                             <input type="number" id="alisFiyati" class="form-control" placeholder="Alış fiyatı girin" min="0" step="0.01">
                         </div>
+                        <div class="form-group">
+                            <label for="satisFiyati"><i class="fas fa-dollar-sign"></i> Satış Fiyatı (₺)</label>
+                            <input type="number" id="satisFiyati" class="form-control" placeholder="Satış fiyatı girin" min="0" step="0.01">
+                        </div>
+                        <div class="form-group">
+                            <label for="kategori"><i class="fas fa-tags"></i> Kategori</label>
+                            <input type="text" id="kategori" class="form-control" placeholder="Kategori girin">
+                        </div>
                     </div>
                     <div style="margin-top: 20px; display: flex; gap: 15px; flex-wrap: wrap;">
                         <button class="btn btn-primary" onclick="urunKaydet()">
@@ -3800,7 +3808,8 @@
             document.getElementById('aciklama').value = urun.aciklama || '';
             document.getElementById('miktar').value = urun.stok_miktari || urun.miktar || 0;
             document.getElementById('alisFiyati').value = urun.alisFiyati || '';
-            document.getElementById('satisFiyati').value = urun.fiyat || urun.satisFiyati || '';
+            // Don't auto-fill sales price - let user enter it manually
+            document.getElementById('satisFiyati').value = '';
             document.getElementById('kategori').value = urun.kategori || '';
             
             // Düzenlenen ürün key'ini kaydet
@@ -3819,8 +3828,8 @@
             const marka = document.getElementById('marka').value.trim();
             const miktar = parseFloat(document.getElementById('miktar').value) || 0;
             const alisFiyati = parseFloat(document.getElementById('alisFiyati').value) || 0;
-            const satisFiyati = 0; // Form'da yok, varsayılan 0
-            const kategori = ''; // Form'da yok, boş string
+            const satisFiyati = parseFloat(document.getElementById('satisFiyati').value) || 0; // Sales price from form
+            const kategori = document.getElementById('kategori').value.trim() || ''; // Category from form
             const aciklama = document.getElementById('aciklama').value.trim();
             
             if (!barkod || !ad) {
