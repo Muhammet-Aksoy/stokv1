@@ -28,7 +28,7 @@ const emailConfig = require('./email-config');
 // Email transporter
 let transporter = null;
 try {
-    transporter = nodemailer.createTransporter(emailConfig);
+    transporter = nodemailer.createTransport(emailConfig);
 } catch (error) {
     console.warn('⚠️ Email configuration not set up:', error.message);
 }
@@ -180,6 +180,9 @@ initializeDatabase();
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('🔗 Client connected:', socket.id);
+
+    // Join a room for data sync
+    socket.join('dataSync');
     
     socket.on('disconnect', () => {
         console.log('❌ Client disconnected:', socket.id);
@@ -947,13 +950,11 @@ async function sendDailyBackup() {
     }
 }
 
-// Schedule daily backup at 23:00
-setInterval(() => {
-    const now = new Date();
-    if (now.getHours() === 23 && now.getMinutes() === 0) {
-        sendDailyBackup();
-    }
-}, 60000); // Check every minute
+// Schedule daily backup at 23:00 using node-cron for reliability
+const cron = require('node-cron');
+cron.schedule('0 23 * * *', () => {
+    sendDailyBackup();
+});
 
 // POST /api/stok-ekle - Tek ürün ekle
 app.post('/api/stok-ekle', async (req, res) => {
@@ -1041,60 +1042,73 @@ app.post('/api/stok-ekle', async (req, res) => {
 app.put('/api/stok-guncelle', async (req, res) => {
     try {
         const urun = req.body;
-        console.log('🔄 Ürün güncelleniyor:', urun.barkod);
+        console.log('🔄 Ürün güncelleniyor:', urun.barkod || urun.id);
         
-        // Ensure proper data types and handle null/undefined values
-        const barkod = urun.barkod || '';
-        const ad = urun.ad || '';
-        const marka = urun.marka || '';
-        const miktar = parseInt(urun.miktar) || 0;
-        const alisFiyati = parseFloat(urun.alisFiyati) || 0;
-        const satisFiyati = parseFloat(urun.satisFiyati) || 0;
-        const kategori = urun.kategori || '';
-        const aciklama = urun.aciklama || '';
-        const varyant_id = urun.varyant_id || '';
-        const id = urun.id; // Use ID for precise update
-        
-        if (!id) {
+        const id = urun.id;
+        const barkod = urun.barkod;
+
+        if (!id && !barkod) {
             return res.status(400).json({
                 success: false,
-                message: 'Ürün ID gerekli',
+                message: 'Ürün ID veya barkod gerekli',
                 timestamp: new Date().toISOString()
             });
         }
-        
-        const result = db.prepare(`
-            UPDATE stok SET 
-                ad = ?, marka = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
-                kategori = ?, aciklama = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE id = ?
-        `).run(ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, id);
-        
+
+        const ad = urun.ad || '';
+        const marka = urun.marka || '';
+        const miktar = Number.isFinite(Number(urun.miktar)) ? Number(urun.miktar) : 0;
+        const alisFiyati = Number.isFinite(Number(urun.alisFiyati)) ? Number(urun.alisFiyati) : 0;
+        const satisFiyati = Number.isFinite(Number(urun.satisFiyati)) ? Number(urun.satisFiyati) : 0;
+        const kategori = urun.kategori || '';
+        const aciklama = urun.aciklama || '';
+        const varyant_id = urun.varyant_id || '';
+
+        let result;
+        let updatedProduct;
+
+        if (id) {
+            result = db.prepare(`
+                UPDATE stok SET 
+                    ad = ?, marka = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
+                    kategori = ?, aciklama = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE id = ?
+            `).run(ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, id);
+            if (result.changes > 0) {
+                updatedProduct = db.prepare('SELECT * FROM stok WHERE id = ?').get(id);
+            }
+        } else {
+            result = db.prepare(`
+                UPDATE stok SET 
+                    ad = ?, marka = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
+                    kategori = ?, aciklama = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP 
+                WHERE barkod = ?
+            `).run(ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, barkod);
+            if (result.changes > 0) {
+                updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? ORDER BY updated_at DESC, id DESC').get(barkod);
+            }
+        }
+
         if (result.changes > 0) {
-            // Get the updated product with its ID
-            const updatedProduct = db.prepare('SELECT * FROM stok WHERE id = ?').get(id);
-            
-            // Real-time sync to all clients
             io.to('dataSync').emit('dataUpdated', {
                 type: 'stok-update',
                 data: updatedProduct,
                 timestamp: new Date().toISOString()
             });
-            
-            res.json({ 
+            return res.json({ 
                 success: true, 
                 message: 'Ürün başarıyla güncellendi', 
                 data: updatedProduct,
                 timestamp: new Date().toISOString()
             });
-        } else {
-            res.status(404).json({ 
-                success: false, 
-                message: 'Ürün bulunamadı', 
-                timestamp: new Date().toISOString()
-            });
         }
-        
+
+        return res.status(404).json({ 
+            success: false, 
+            message: 'Ürün bulunamadı', 
+            timestamp: new Date().toISOString()
+        });
+
     } catch (error) {
         console.error('❌ Ürün güncellenirken hata:', error);
         res.status(500).json({ 
