@@ -53,6 +53,7 @@ function initializeDatabase() {
         db.exec('PRAGMA foreign_keys = ON');
         db.exec('PRAGMA journal_mode = WAL');
         db.exec('PRAGMA synchronous = NORMAL');
+        db.exec('PRAGMA busy_timeout = 5000');
         
         // Create tables with proper schema
         db.exec(`
@@ -1082,10 +1083,10 @@ app.put('/api/stok-guncelle', async (req, res) => {
                 UPDATE stok SET 
                     ad = ?, marka = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
                     kategori = ?, aciklama = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP 
-                WHERE barkod = ?
-            `).run(ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, barkod);
+                WHERE barkod = ? AND marka = ? AND varyant_id = ?
+            `).run(ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, barkod, marka, varyant_id);
             if (result.changes > 0) {
-                updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? ORDER BY updated_at DESC, id DESC').get(barkod);
+                updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ? ORDER BY updated_at DESC, id DESC').get(barkod, marka, varyant_id);
             }
         }
 
@@ -1803,11 +1804,11 @@ app.post('/api/bulk-update', async (req, res) => {
     }
 });
 
-// POST /api/stok-guncelle-barkod - Update existing product with same barcode
+// POST /api/stok-guncelle-barkod - Varyant güvenli güncelleme
 app.post('/api/stok-guncelle-barkod', async (req, res) => {
     try {
-        const { barkod, ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id } = req.body;
-        
+        const { barkod, ad, marka = '', miktar = 0, alisFiyati = 0, satisFiyati = 0, kategori = '', aciklama = '', varyant_id = '' } = req.body;
+
         if (!barkod || !ad) {
             return res.status(400).json({
                 success: false,
@@ -1815,43 +1816,40 @@ app.post('/api/stok-guncelle-barkod', async (req, res) => {
                 timestamp: new Date().toISOString()
             });
         }
-        
-        // Check if product exists
-        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
-        
+
+        // Sadece eşleşen barkod+marka+varyant için güncelle
+        const existingProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
+
         if (!existingProduct) {
             return res.status(404).json({
                 success: false,
-                message: 'Ürün bulunamadı',
+                message: 'Belirtilen varyant bulunamadı',
                 timestamp: new Date().toISOString()
             });
         }
-        
-        // Update the existing product
+
         const result = db.prepare(`
             UPDATE stok SET 
                 ad = ?, marka = ?, miktar = ?, alisFiyati = ?, satisFiyati = ?, 
                 kategori = ?, aciklama = ?, varyant_id = ?, updated_at = CURRENT_TIMESTAMP 
-            WHERE barkod = ?
-        `).run(ad, marka || '', miktar || 0, alisFiyati || 0, satisFiyati || 0, 
-                kategori || '', aciklama || '', varyant_id || '', barkod);
-        
-        const updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ?').get(barkod);
-        
-        // Real-time sync to all clients
+            WHERE barkod = ? AND marka = ? AND varyant_id = ?
+        `).run(ad, marka, miktar, alisFiyati, satisFiyati, kategori, aciklama, varyant_id, barkod, marka, varyant_id);
+
+        const updatedProduct = db.prepare('SELECT * FROM stok WHERE barkod = ? AND marka = ? AND varyant_id = ?').get(barkod, marka, varyant_id);
+
         io.to('dataSync').emit('dataUpdated', {
             type: 'stok-update',
             data: updatedProduct,
             timestamp: new Date().toISOString()
         });
-        
+
         res.json({ 
             success: true, 
             message: 'Ürün başarıyla güncellendi', 
             data: updatedProduct,
             timestamp: new Date().toISOString()
         });
-        
+
     } catch (error) {
         res.status(500).json({
             success: false,
