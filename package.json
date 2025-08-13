@@ -14,8 +14,8 @@
     "test": "node test-server.js",
     "test:api": "node -e \"require('./test-api.js')\"",
     "test:endpoints": "curl -s http://localhost:3000/api/test && echo",
-    "backup": "node python-scripts/backup_db.py",
-    "analyze": "node python-scripts/analyze_data.py"
+    "backup": "python3 python-scripts/backup_db.py",
+    "analyze": "python3 python-scripts/analyze_data.py"
   },
   "dependencies": {
     "axios": "^1.11.0",

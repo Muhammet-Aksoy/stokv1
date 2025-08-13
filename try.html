@@ -2232,7 +2232,7 @@
 
     <script>
         // Socket.IO connection
-        const socket = io();
+        const socket = io({ transports: ['websocket', 'polling'], reconnection: true });
         
 
         
@@ -2290,7 +2290,14 @@
                 case 'stok-add':
                 case 'stok-update':
                     if (data.data && data.data.barkod) {
-                        stokListesi[data.data.barkod] = data.data;
+                        const key = `${data.data.barkod}_${data.data.marka || ''}_${data.data.varyant_id || ''}`;
+                        stokListesi[key] = {
+                            ...stokListesi[key],
+                            ...data.data,
+                            urun_adi: data.data.urun_adi || data.data.ad || stokListesi[key]?.urun_adi || '',
+                            stok_miktari: data.data.stok_miktari ?? data.data.miktar ?? stokListesi[key]?.stok_miktari ?? 0,
+                            satisFiyati: data.data.satisFiyati ?? data.data.fiyat ?? stokListesi[key]?.satisFiyati ?? 0
+                        };
                         guncellenenVerileriKaydet();
                         stokTablosunuGuncelle();
                         showNotification('📦 Stok güncellendi', 'info');
@@ -2299,19 +2306,17 @@
                     
                 case 'stok-delete':
                     if (data.data) {
-                        // Barkod ile sil - tüm olası key'leri kontrol et
+                        // Varyant güvenli silme
                         if (data.data.barkod) {
-                            // Önce barkod ile direkt eşleşen key'i ara
-                            const keyToDelete = Object.keys(stokListesi).find(key => {
-                                const product = stokListesi[key];
-                                return product && product.barkod === data.data.barkod;
-                            });
-                            
-                            if (keyToDelete) {
+                            const keyToDelete = `${data.data.barkod}_${data.data.marka || ''}_${data.data.varyant_id || ''}`;
+                            if (stokListesi[keyToDelete]) {
                                 delete stokListesi[keyToDelete];
                                 console.log('🗑️ Product deleted by key:', keyToDelete);
                             } else {
-                                console.warn('⚠️ Product not found for deletion:', data.data.barkod);
+                                // Fallback: aynı barkodlu tüm varyantları silmek istenirse
+                                const keys = Object.keys(stokListesi).filter(k => stokListesi[k]?.barkod === data.data.barkod);
+                                keys.forEach(k => delete stokListesi[k]);
+                                console.warn('⚠️ Exact variant not found, removed all with barcode:', data.data.barkod);
                             }
                         }
                         guncellenenVerileriKaydet();
@@ -3124,7 +3129,7 @@
         
         // Ürün detaylarını göster
         function showProductDetails(barkod) {
-            const product = stokListesi[barkod];
+            const product = Object.values(stokListesi).find(p => p.barkod === barkod) || stokListesi[barkod];
             
             if (product) {
                 document.getElementById('detail-barkod').value = product.barkod;
@@ -3484,8 +3489,8 @@
                         </div>
                         <div class="form-group">
                             <label for="satisFiyati">Satış Fiyatı (₺)</label>
-                            <input type="number" id="satisFiyati" class="form-control" min="0" step="0.01" placeholder="Boş bırakabilirsiniz">
-                            <small style="color: #666;">Fiyat belirtmezseniz varsayılan fiyat kullanılır</small>
+                            <input type="number" id="satisFiyati" class="form-control" min="0" step="0.01" placeholder="Fiyatı girin (zorunlu)">
+                            <small style="color: #666;">Fiyat belirtmek zorunludur</small>
                         </div>
                         <div id="customer-selection" style="margin-top: 10px;">
                             <label>Müşteri Seçin</label>
@@ -3526,7 +3531,8 @@
                         return;
                     }
                     if (isNaN(satisFiyati) || satisFiyati <= 0) {
-                        satisFiyati = stokListesi[key].alisFiyati || 0;
+                        Swal.fire('Hata', 'Satış fiyatı zorunludur ve 0’dan büyük olmalıdır.', 'error');
+                        return;
                     }
                     await tamamlaSatis(key, satisMiktari, customerId, null, satisFiyati);
                 }
@@ -3840,10 +3846,12 @@
                 let response;
                 
                 if (editingBarkod && stokListesi[editingBarkod]) {
-                    // Güncelleme
+                    // Güncelleme (varyant güvenli)
                     console.log('🔄 Ürün güncelleniyor:', barkod);
                     const editingUrun = stokListesi[editingBarkod];
                     urunData.id = editingUrun.id; // ID'yi ekle
+                    urunData.marka = editingUrun.marka || urunData.marka || '';
+                    urunData.varyant_id = editingUrun.varyant_id || urunData.varyant_id || '';
                     urunData.guncellemeTarihi = new Date().toISOString();
                     
                     response = await fetch(`${API_BASE}/api/stok-guncelle`, {
